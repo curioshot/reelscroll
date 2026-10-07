@@ -10,7 +10,7 @@ git clone https://github.com/curioshot/reelscroll.git
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Click **Load unpacked** and pick the `reelscroll` folder.
-3. Open `https://www.instagram.com/reels/` and scroll with the wheel.
+3. Open `https://www.instagram.com/reels/` and scroll with the buttons and keys you want (also the wheel).
 
 No build step, no dependencies.
 
