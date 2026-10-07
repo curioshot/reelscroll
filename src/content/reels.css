@@ -1,4 +1,4 @@
-/* Insta Reels Scroller — isolated toast, namespaced to avoid IG collisions */
+/* ReelScroll — isolated toast, namespaced to avoid IG collisions */
 .irs-toast {
   position: fixed;
   left: 50%;

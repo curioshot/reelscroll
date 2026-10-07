@@ -1,4 +1,4 @@
-/* Popup: quick toggles + binding summary. No inline handlers (MV3 CSP). */
+/* ReelScroll popup: quick toggles + binding summary. No inline handlers (MV3 CSP). */
 const DEFAULTS = {
   enabled: true,
   wheelEnabled: true,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Insta Reels Scroller",
-  "short_name": "ReelsScroller",
+  "name": "ReelScroll",
+  "short_name": "ReelScroll",
   "version": "1.0.0",
   "description": "Scroll Instagram Reels with mouse wheel, custom up/down keys, and keyboard media keys (next/prev track).",
   "minimum_chrome_version": "109",
@@ -12,7 +12,7 @@
   },
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "Insta Reels Scroller",
+    "default_title": "ReelScroll",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",

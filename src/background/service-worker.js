@@ -1,4 +1,4 @@
-/* Insta Reels Scroller — service worker (MV3, ephemeral: no in-memory state) */
+/* ReelScroll — service worker (MV3, ephemeral: no in-memory state) */
 
 const DEFAULT_SETTINGS = {
   enabled: true,

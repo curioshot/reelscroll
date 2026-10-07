@@ -1,15 +1,15 @@
-# ReelHelp
+# ReelScroll
 
 Scroll Instagram Reels without touching the scrollbar. Mouse wheel flips through reels, your own up/down keys replace scrolling, and keyboard media keys (`⏭` / `⏮`) jump to the next or previous reel.
 
 ## Install (developer mode)
 
 ```bash
-git clone https://github.com/curioshot/reelhelp.git
+git clone https://github.com/curioshot/reelscroll.git
 ```
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and pick the `reelhelp` folder.
+2. Click **Load unpacked** and pick the `reelscroll` folder.
 3. Open `https://www.instagram.com/reels/` and scroll with the wheel.
 
 No build step, no dependencies.

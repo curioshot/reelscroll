@@ -1,4 +1,4 @@
-/* Insta Reels Scroller — content script (isolated world, no page JS access) */
+/* ReelScroll — content script (isolated world, no page JS access) */
 (() => {
   'use strict';
 

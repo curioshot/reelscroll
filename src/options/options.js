@@ -1,4 +1,4 @@
-/* Options page: fully customizable up/down keys + wheel tuning. No inline handlers. */
+/* ReelScroll options: fully customizable up/down keys + wheel tuning. No inline handlers. */
 const DEFAULTS = {
   enabled: true,
   wheelEnabled: true,
