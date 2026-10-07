@@ -1,0 +1,349 @@
+/* Insta Reels Scroller — content script (isolated world, no page JS access) */
+(() => {
+  'use strict';
+
+  const DEFAULTS = {
+    enabled: true,
+    wheelEnabled: true,
+    invertWheel: false,
+    smooth: true,
+    cooldownMs: 800,
+    wheelThreshold: 30,
+    nextKey: 'KeyS',
+    prevKey: 'KeyW',
+    nextLabel: 'S',
+    prevLabel: 'W',
+    allowArrows: false
+  };
+
+  let settings = { ...DEFAULTS };
+  let lastNavAt = 0;
+  let currentIndex = 0;
+  let candidates = [];
+  let observer = null;
+  let rescanTimer = 0;
+  let toastEl = null;
+  let toastTimer = 0;
+
+  async function loadSettings() {
+    try {
+      const stored = await chrome.storage.sync.get(null);
+      settings = { ...DEFAULTS, ...stored };
+    } catch (err) {
+      // Storage blocked: stick with defaults.
+    }
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    for (const [k, { newValue }] of Object.entries(changes)) {
+      if (k in settings) settings[k] = newValue;
+    }
+  });
+
+  function isReelsPage() {
+    const p = location.pathname || '';
+    return p === '/reels' || p === '/reels/' || p.startsWith('/reels/') || p.startsWith('/reel/');
+  }
+
+  function isActive() {
+    return settings.enabled && isReelsPage();
+  }
+
+  function isEditable(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select';
+  }
+
+  function isNestedScrollable(el) {
+    // Only let SMALL scrollable panes (comments sheet, dialogs) scroll natively.
+    // The main Reels feed scroller is ~viewport height — that one we WANT to hijack.
+    let node = el instanceof HTMLElement ? el : el?.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (node instanceof HTMLElement) {
+        const style = getComputedStyle(node);
+        const overflowY = style.overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 8) {
+          // Small pane => nested (don't hijack). Full-height => main feed (hijack).
+          if (node.clientHeight < window.innerHeight * 0.7) return true;
+          // Large container => keep walking: it may contain a small pane deeper down,
+          // but we already checked from the inside out, so this IS the feed scroller.
+          return false;
+        }
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function collectCandidates() {
+    const found = [];
+    const seen = new Set();
+
+    const push = (el) => {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      const r = el.getBoundingClientRect();
+      // Must be roughly viewport-sized vertically to be a reel.
+      if (r.height > window.innerHeight * 0.4) found.push(el);
+    };
+
+    // Strategy 1: articles containing a video (most stable across IG redesigns).
+    document.querySelectorAll('main article').forEach((a) => {
+      if (a.querySelector('video')) push(a);
+    });
+
+    // Strategy 2: any video -> closest large container.
+    document.querySelectorAll('video').forEach((v) => {
+      const r = v.getBoundingClientRect();
+      if (r.height < 200 || r.width < 150) return; // story thumbnails, previews
+      const article = v.closest('article');
+      if (article) {
+        push(article);
+        return;
+      }
+      // Walk up to a container roughly viewport height.
+      let node = v.parentElement;
+      for (let i = 0; i < 6 && node; i++) {
+        const nr = node.getBoundingClientRect();
+        if (nr.height > window.innerHeight * 0.5) {
+          push(node);
+          break;
+        }
+        node = node.parentElement;
+      }
+    });
+
+    found.sort((a, b) => {
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return ra.top - rb.top;
+    });
+
+    return found;
+  }
+
+  function refreshCandidates() {
+    candidates = collectCandidates();
+    observeCandidates();
+    updateCurrentIndex();
+  }
+
+  function scheduleRescan() {
+    clearTimeout(rescanTimer);
+    rescanTimer = setTimeout(() => {
+      requestAnimationFrame(refreshCandidates);
+    }, 300);
+  }
+
+  function observeCandidates() {
+    if (observer) observer.disconnect();
+    if (!('IntersectionObserver' in window)) return;
+    observer = new IntersectionObserver(
+      (entries) => {
+        let best = -1;
+        let bestRatio = 0;
+        entries.forEach((e) => {
+          const idx = candidates.indexOf(e.target);
+          if (idx === -1) return;
+          if (e.isIntersecting && e.intersectionRatio > bestRatio) {
+            bestRatio = e.intersectionRatio;
+            best = idx;
+          }
+        });
+        if (best >= 0) currentIndex = best;
+      },
+      { threshold: [0.3, 0.5, 0.6, 0.8] }
+    );
+    // Batch observation to avoid layout thrash on large feeds.
+    const batch = candidates.slice(0, 60);
+    requestAnimationFrame(() => batch.forEach((el) => observer.observe(el)));
+  }
+
+  function updateCurrentIndex() {
+    if (candidates.length === 0) return;
+    const midY = window.innerHeight / 2;
+    let best = 0;
+    let bestDist = Infinity;
+    candidates.forEach((el, i) => {
+      const r = el.getBoundingClientRect();
+      const center = r.top + r.height / 2;
+      const d = Math.abs(center - midY);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    });
+    currentIndex = best;
+  }
+
+  function canNavigate() {
+    return Date.now() - lastNavAt >= settings.cooldownMs;
+  }
+
+  function scrollToIndex(idx, source) {
+    if (!isActive()) return false;
+    if (!canNavigate()) return false;
+    updateCurrentIndexIfStale();
+    const clamped = Math.max(0, Math.min(candidates.length - 1, idx));
+    lastNavAt = Date.now();
+
+    if (candidates.length === 0) {
+      // Single-reel page (/reel/<id>/) or DOM not ready: fall back to viewport scroll.
+      const dir = clamped >= currentIndex ? 1 : -1;
+      window.scrollBy({ top: dir * window.innerHeight * 0.9, behavior: settings.smooth ? 'smooth' : 'auto' });
+      showToast(dir > 0 ? '▼' : '▲');
+      return true;
+    }
+
+    if (clamped === currentIndex && candidates.length > 1) {
+      // Already at edge — still give feedback but don't loop.
+      showToast(clamped === 0 ? '▲ top' : '▼ end');
+      return true;
+    }
+
+    currentIndex = clamped;
+    const el = candidates[clamped];
+    try {
+      el.scrollIntoView({ behavior: settings.smooth ? 'smooth' : 'auto', block: 'center' });
+    } catch (err) {
+      window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
+    }
+    showToast(source === 'prev' ? '▲' : '▼', source);
+    return true;
+  }
+
+  function updateCurrentIndexIfStale() {
+    if (candidates.length === 0) refreshCandidates();
+  }
+
+  function goNext(source = 'api') {
+    updateCurrentIndex();
+    return scrollToIndex(currentIndex + 1, source === 'api' ? 'next' : source);
+  }
+
+  function goPrev(source = 'api') {
+    updateCurrentIndex();
+    return scrollToIndex(currentIndex - 1, source === 'api' ? 'prev' : source);
+  }
+
+  function showToast(text, source) {
+    const label = text || (source === 'next' ? '▼' : source === 'prev' ? '▲' : '');
+    if (!label) return;
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.className = 'irs-toast';
+      toastEl.setAttribute('aria-hidden', 'true');
+      document.documentElement.appendChild(toastEl);
+    }
+    toastEl.textContent = label;
+    toastEl.classList.add('irs-show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('irs-show'), 450);
+  }
+
+  function onWheel(e) {
+    if (!isActive() || !settings.wheelEnabled) return;
+    if (isEditable(e.target)) return;
+    // Ignore horizontal/trackpad-horizontal gestures.
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (Math.abs(e.deltaY) < settings.wheelThreshold) return;
+    if (!canNavigate()) {
+      e.preventDefault();
+      return;
+    }
+    if (isNestedScrollable(e.target)) return; // let comment sheets scroll
+
+    let down = e.deltaY > 0;
+    if (settings.invertWheel) down = !down;
+    e.preventDefault();
+    e.stopPropagation();
+    if (down) goNext('wheel');
+    else goPrev('wheel');
+  }
+
+  function onKeyDown(e) {
+    if (!isActive()) return;
+    if (e.repeat && !canNavigate()) return;
+    if (isEditable(e.target)) return;
+    // Don't fight modifier combos (Ctrl+F etc.).
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const code = e.code;
+    if (code === settings.nextKey) {
+      e.preventDefault();
+      goNext('key');
+    } else if (code === settings.prevKey) {
+      e.preventDefault();
+      goPrev('key');
+    } else if (settings.allowArrows && code === 'ArrowDown') {
+      e.preventDefault();
+      goNext('key');
+    } else if (settings.allowArrows && code === 'ArrowUp') {
+      e.preventDefault();
+      goPrev('key');
+    }
+  }
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message || typeof message.type !== 'string') return;
+    if (message.type === 'REELS_NEXT') {
+      const ok = isActive() ? goNext(message.source || 'media-key') : false;
+      sendResponse({ ok, active: isActive(), count: candidates.length });
+    } else if (message.type === 'REELS_PREV') {
+      const ok = isActive() ? goPrev(message.source || 'media-key') : false;
+      sendResponse({ ok, active: isActive(), count: candidates.length });
+    } else if (message.type === 'REELS_PING') {
+      sendResponse({ ok: true, active: isActive(), count: candidates.length, index: currentIndex, url: location.href });
+    }
+    return true;
+  });
+
+  function initObservers() {
+    const mo = new MutationObserver(scheduleRescan);
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Instagram is an SPA — URL changes without reload (pushState/replaceState/popstate).
+    const origPush = history.pushState;
+    history.pushState = function (...args) {
+      const ret = origPush.apply(this, args);
+      scheduleRescan();
+      return ret;
+    };
+    const origReplace = history.replaceState;
+    history.replaceState = function (...args) {
+      const ret = origReplace.apply(this, args);
+      scheduleRescan();
+      return ret;
+    };
+    window.addEventListener('popstate', scheduleRescan);
+    // Fallback poll: catches SPA navs that bypass the patches.
+    let lastUrl = location.href;
+    setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        scheduleRescan();
+      }
+    }, 1000);
+  }
+
+  async function init() {
+    await loadSettings();
+    refreshCandidates();
+    initObservers();
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('resize', scheduleRescan);
+    // Late IG hydration: rescan a few times after load.
+    setTimeout(refreshCandidates, 1500);
+    setTimeout(refreshCandidates, 3500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+})();

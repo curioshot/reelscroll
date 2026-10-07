@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Reels Scroller — Settings</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 20px; color: #1c1c1e; }
+    h1 { font-size: 22px; display: flex; align-items: center; gap: 10px; }
+    .logo { flex: none; }
+    .card { border: 1px solid #e5e5ea; border-radius: 12px; padding: 16px; margin: 14px 0; }
+    .card h2 { font-size: 15px; margin: 0 0 10px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; font-size: 14px; }
+    .keybtn { min-width: 140px; padding: 8px 14px; border-radius: 8px; border: 1px solid #d1d1d6; background: #f2f2f7; cursor: pointer; font-size: 14px; }
+    .keybtn.capturing { background: #000; color: #fff; border-color: #000; }
+    input[type="range"] { width: 180px; }
+    .val { color: #6e6e73; font-size: 13px; min-width: 64px; text-align: right; }
+    #status { font-size: 13px; color: #34c759; min-height: 18px; }
+    .danger { background: #fff; }
+    code { background: #f2f2f7; padding: 1px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1><svg class="logo" width="24" height="24" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="16" height="16" rx="4" fill="#bc2a8d"/><path d="M6 4.2v9.6L13.5 9 6 4.2z" fill="#fff"/></svg>Reels Scroller — Settings</h1>
+  <p>Custom keys replace scrolling on <code>instagram.com/reels</code> and <code>/reel/</code> pages. Mouse wheel and ⏭ ⏮ media keys included.</p>
+
+  <div class="card">
+    <h2>Navigation keys</h2>
+    <div class="row"><span>Previous reel (up)</span><button class="keybtn" id="prevCapture">W</button></div>
+    <div class="row"><span>Next reel (down)</span><button class="keybtn" id="nextCapture">S</button></div>
+    <div class="row"><span>Also allow <code>↑</code> / <code>↓</code> arrows</span><input type="checkbox" id="allowArrows"></div>
+    <div class="row"><span>Extension enabled</span><input type="checkbox" id="enabled"></div>
+  </div>
+
+  <div class="card">
+    <h2>Mouse wheel</h2>
+    <div class="row"><span>Scroll reels with wheel</span><input type="checkbox" id="wheelEnabled"></div>
+    <div class="row"><span>Invert wheel direction</span><input type="checkbox" id="invertWheel"></div>
+    <div class="row"><span>Sensitivity (px)</span><span><input type="range" id="wheelThreshold" min="10" max="100" step="5"><span class="val" id="wheelThresholdVal"></span></span></div>
+    <div class="row"><span>Cooldown between jumps (ms)</span><span><input type="range" id="cooldownMs" min="300" max="2000" step="50"><span class="val" id="cooldownVal"></span></span></div>
+    <div class="row"><span>Smooth scrolling</span><input type="checkbox" id="smooth"></div>
+  </div>
+
+  <div class="card">
+    <h2>Media keys ⏭ ⏮</h2>
+    <p style="font-size:13px;color:#555">Handled via Chrome → <code>chrome://extensions/shortcuts</code> → set <b>Next reel / Previous reel</b> to <b>Global</b>. Defaults are <code>MediaNextTrack</code> / <code>MediaPrevTrack</code>.</p>
+  </div>
+
+  <div class="row">
+    <button class="keybtn danger" id="reset">Reset defaults</button>
+    <span id="status"></span>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

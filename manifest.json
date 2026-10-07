@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Insta Reels Scroller",
+  "short_name": "ReelsScroller",
+  "version": "1.0.0",
+  "description": "Scroll Instagram Reels with mouse wheel, custom up/down keys, and keyboard media keys (next/prev track).",
+  "minimum_chrome_version": "109",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.instagram.com/*", "https://instagram.com/*"],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Insta Reels Scroller",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*", "https://instagram.com/*"],
+      "js": ["src/content/reels.js"],
+      "css": ["src/content/reels.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "next-reel": {
+      "suggested_key": {
+        "default": "MediaNextTrack"
+      },
+      "description": "Go to next reel",
+      "global": true
+    },
+    "prev-reel": {
+      "suggested_key": {
+        "default": "MediaPrevTrack"
+      },
+      "description": "Go to previous reel",
+      "global": true
+    }
+  }
+}

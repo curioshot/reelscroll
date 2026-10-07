@@ -1,0 +1,32 @@
+# Secrets and local state
+.env
+.env.*
+*.pem
+*.key
+
+# Logs and dumps
+*.log
+*dump*.sql
+*storage*.json
+*export*.{json,md,csv}
+
+# Deps and build output
+node_modules/
+dist/
+build/
+coverage/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Packaged extension artifacts
+*.crx
+*.zip
+
+# Internal AI workflow docs (never public)
+.opencode/

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 300px; padding: 14px 16px; font-family: system-ui, sans-serif; color: #1c1c1e; }
+    h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .logo { flex: none; }
+    .row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; font-size: 13px; }
+    .keys { background: #f2f2f7; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 10px 0; }
+    kbd { background: #fff; border: 1px solid #d1d1d6; border-bottom-width: 2px; border-radius: 6px; padding: 1px 7px; font-family: inherit; font-size: 12px; }
+    .btns { display: flex; gap: 8px; margin-top: 10px; }
+    button { flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid #d1d1d6; background: #fff; cursor: pointer; font-size: 12.5px; }
+    button.primary { background: #000; color: #fff; border-color: #000; }
+    .hint { font-size: 11.5px; color: #6e6e73; margin-top: 8px; line-height: 1.4; }
+    .switch { position: relative; width: 38px; height: 22px; }
+    .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .track { position: absolute; inset: 0; background: #d1d1d6; border-radius: 999px; pointer-events: none; transition: background .15s; }
+    .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    .switch input:checked + .track { background: #34c759; }
+    .switch input:checked + .track::after { left: 18px; }
+  </style>
+</head>
+<body>
+  <h1><svg class="logo" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="16" height="16" rx="4" fill="#bc2a8d"/><path d="M6 4.2v9.6L13.5 9 6 4.2z" fill="#fff"/></svg>Reels Scroller</h1>
+  <div class="row">
+    <span>Enabled on Reels</span>
+    <label class="switch"><input type="checkbox" id="enabled"><span class="track"></span></label>
+  </div>
+  <div class="row">
+    <span>Mouse wheel scroll</span>
+    <label class="switch"><input type="checkbox" id="wheelEnabled"><span class="track"></span></label>
+  </div>
+  <div class="keys" id="bindings">Up: <kbd>W</kbd> &nbsp; Down: <kbd>S</kbd></div>
+  <div class="btns">
+    <button id="openOptions" class="primary">Set keys</button>
+    <button id="openShortcuts">Media keys</button>
+  </div>
+  <div class="hint">⏭ ⏮ hardware keys work via Chrome shortcuts. If they don't respond, open “Media keys” → find this extension → set Global.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
