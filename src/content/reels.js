@@ -50,6 +50,10 @@
     return settings.enabled && isReelsPage();
   }
 
+  function fromController(el) {
+    return el instanceof HTMLElement && !!el.closest('#reelscroll-controller-host');
+  }
+
   function isEditable(el) {
     if (!el) return false;
     if (el.isContentEditable) return true;
@@ -246,6 +250,7 @@
 
   function onWheel(e) {
     if (!isActive() || !settings.wheelEnabled) return;
+    if (fromController(e.target)) return;
     if (isEditable(e.target)) return;
     // Ignore horizontal/trackpad-horizontal gestures.
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
@@ -266,6 +271,7 @@
 
   function onKeyDown(e) {
     if (!isActive()) return;
+    if (fromController(e.target)) return;
     if (e.repeat && !canNavigate()) return;
     if (isEditable(e.target)) return;
     // Don't fight modifier combos (Ctrl+F etc.).

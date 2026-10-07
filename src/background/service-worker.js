@@ -3,6 +3,10 @@
 const DEFAULT_SETTINGS = {
   enabled: true,
   wheelEnabled: true,
+  controllerEnabled: true,
+  playbackRate: 1,
+  controllerMini: false,
+  controllerPos: null,
   invertWheel: false,
   smooth: true,
   cooldownMs: 800,

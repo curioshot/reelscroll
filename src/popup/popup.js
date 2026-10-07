@@ -2,6 +2,7 @@
 const DEFAULTS = {
   enabled: true,
   wheelEnabled: true,
+  controllerEnabled: true,
   nextKey: 'KeyS',
   prevKey: 'KeyW',
   nextLabel: 'S',
@@ -17,12 +18,14 @@ function escapeHtml(s) {
 document.addEventListener('DOMContentLoaded', async () => {
   const enabledEl = document.getElementById('enabled');
   const wheelEl = document.getElementById('wheelEnabled');
+  const controllerEl = document.getElementById('controllerEnabled');
   const bindingsEl = document.getElementById('bindings');
 
   const stored = await chrome.storage.sync.get(null);
   const s = { ...DEFAULTS, ...stored };
   enabledEl.checked = s.enabled;
   wheelEl.checked = s.wheelEnabled;
+  controllerEl.checked = s.controllerEnabled;
   bindingsEl.innerHTML =
     `Up: <kbd>${escapeHtml(s.prevLabel)}</kbd> &nbsp; Down: <kbd>${escapeHtml(s.nextLabel)}</kbd>`;
 
@@ -31,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   wheelEl.addEventListener('change', async () => {
     await chrome.storage.sync.set({ wheelEnabled: wheelEl.checked });
+  });
+  controllerEl.addEventListener('change', async () => {
+    await chrome.storage.sync.set({ controllerEnabled: controllerEl.checked });
   });
 
   document.getElementById('openOptions').addEventListener('click', async () => {

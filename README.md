@@ -1,6 +1,6 @@
 # ReelScroll
 
-Scroll Instagram Reels without touching the scrollbar. Mouse wheel flips through reels, your own up/down keys replace scrolling, and keyboard media keys (`⏭` / `⏮`) jump to the next or previous reel.
+Scroll Instagram Reels without touching the scrollbar. Mouse wheel flips through reels, your own up/down keys replace scrolling, and keyboard media keys (`⏭` / `⏮`) jump to the next or previous reel. A floating video controller adds a seekable timeline, slow-motion/fast speeds, and simulated reverse play.
 
 ## Install (developer mode)
 
@@ -24,6 +24,10 @@ No build step, no dependencies.
 | Arrow keys | Off by default | Options page toggle |
 
 Click the toolbar icon for a quick on/off switch. The **Set keys** button opens the options page, where you can press any key to bind it, flip the wheel direction, and tune sensitivity and cooldown.
+
+## Video controller
+
+While a reel plays, a small pill sits over the video: play/pause, a timeline you can click or drag to scrub, `-5s` / `+5s` jumps, a speed button cycling `0.5x → 3x`, and a reverse button (`-1x` / `-2x`). Browsers can't play video truly backwards, so reverse is simulated by stepping the timeline back — slightly steppy, but it works. Drag the pill anywhere; it remembers its spot. The `–` button shrinks it to a chip, and the toolbar popup can hide it entirely.
 
 ## How it works
 
