@@ -89,6 +89,7 @@
     const push = (el) => {
       if (!el || seen.has(el)) return;
       seen.add(el);
+      if (!el.isConnected) return; // virtualized away: scrolling it would no-op
       const r = el.getBoundingClientRect();
       // Must be roughly viewport-sized vertically to be a reel.
       if (r.height > window.innerHeight * 0.4) found.push(el);
@@ -167,6 +168,7 @@
   }
 
   function updateCurrentIndex() {
+    candidates = candidates.filter((el) => el.isConnected);
     if (candidates.length === 0) return;
     const midY = window.innerHeight / 2;
     let best = 0;
@@ -187,33 +189,66 @@
     return Date.now() - lastNavAt >= settings.cooldownMs;
   }
 
+  // The snap feed usually scrolls an inner div, not the window.
+  // Scroll that container; fall back to the viewport.
+  function feedScroller() {
+    const anchor = candidates[currentIndex] || document.querySelector('main');
+    let node = anchor instanceof HTMLElement ? anchor.parentElement : null;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const oy = getComputedStyle(node).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 8) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function viewportNudge(down, source) {
+    // IG virtualizes the feed, so often only one reel is detectable.
+    // A viewport scroll still moves the snap feed; the rescan picks up the new reel.
+    lastNavAt = Date.now();
+    const top = (down ? 1 : -1) * window.innerHeight * 0.9;
+    const behavior = settings.smooth ? 'smooth' : 'auto';
+    const scroller = feedScroller();
+    if (scroller) {
+      scroller.scrollBy({ top, behavior });
+    } else {
+      window.scrollBy({ top, behavior });
+    }
+    showToast(down ? '▼' : '▲', source);
+    scheduleRescan();
+    return true;
+  }
+
   function scrollToIndex(idx, source) {
     if (!isActive()) return false;
     if (!canNavigate()) return false;
     updateCurrentIndexIfStale();
-    const clamped = Math.max(0, Math.min(candidates.length - 1, idx));
-    lastNavAt = Date.now();
 
-    if (candidates.length === 0) {
-      // Single-reel page (/reel/<id>/) or DOM not ready: fall back to viewport scroll.
-      const dir = clamped >= currentIndex ? 1 : -1;
-      window.scrollBy({ top: dir * window.innerHeight * 0.9, behavior: settings.smooth ? 'smooth' : 'auto' });
-      showToast(dir > 0 ? '▼' : '▲');
-      return true;
+    if (candidates.length <= 1) {
+      // Single-reel page (/reel/<id>/), DOM not ready, or virtualized feed:
+      // fall back to a viewport scroll in the requested direction.
+      return viewportNudge(idx >= currentIndex, source);
     }
 
-    if (clamped === currentIndex && candidates.length > 1) {
-      // Already at edge — still give feedback but don't loop.
+    const clamped = Math.max(0, Math.min(candidates.length - 1, idx));
+
+    if (clamped === currentIndex) {
+      // Already at edge — feedback only, and don't burn the cooldown.
       showToast(clamped === 0 ? '▲ top' : '▼ end');
       return true;
     }
 
+    lastNavAt = Date.now();
+    const dirDown = clamped >= currentIndex;
     currentIndex = clamped;
     const el = candidates[clamped];
     try {
       el.scrollIntoView({ behavior: settings.smooth ? 'smooth' : 'auto', block: 'center' });
     } catch (err) {
-      window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
+      const behavior = settings.smooth ? 'smooth' : 'auto';
+      window.scrollBy({ top: (dirDown ? 1 : -1) * window.innerHeight * 0.9, behavior });
     }
     showToast(source === 'prev' ? '▲' : '▼', source);
     return true;
@@ -342,6 +377,19 @@
     window.addEventListener('wheel', onWheel, { passive: false, capture: true });
     window.addEventListener('keydown', onKeyDown, { capture: true });
     window.addEventListener('resize', scheduleRescan);
+    // Local bridge: the video controller pill asks for turns the same way keys do.
+    window.addEventListener('reelscroll:next', (e) => goNext(e.detail?.source || 'controller'));
+    window.addEventListener('reelscroll:prev', (e) => goPrev(e.detail?.source || 'controller'));
+    try {
+      window.__reelscrollNav = () => ({
+        reelsPage: isReelsPage(),
+        candidates: candidates.length,
+        currentIndex,
+        videos: document.querySelectorAll('video').length
+      });
+    } catch (err) {
+      // Sealed window object on this page: snapshot stays unavailable.
+    }
     // Late IG hydration: rescan a few times after load.
     setTimeout(refreshCandidates, 1500);
     setTimeout(refreshCandidates, 3500);

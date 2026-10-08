@@ -30,3 +30,8 @@ Thumbs.db
 
 # Internal AI workflow docs (never public)
 .opencode/
+
+# Personal Spotify lyrics CLI (private, never commit)
+spotify/
+*.venv
+.venv/

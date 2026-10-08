@@ -4,6 +4,7 @@ const DEFAULT_SETTINGS = {
   enabled: true,
   wheelEnabled: true,
   controllerEnabled: true,
+  autoAdvance: true,
   playbackRate: 1,
   controllerMini: false,
   controllerPos: null,

@@ -27,7 +27,7 @@ Click the toolbar icon for a quick on/off switch. The **Set keys** button opens 
 
 ## Video controller
 
-While a reel plays, a small pill sits over the video: play/pause, a timeline you can click or drag to scrub, `-5s` / `+5s` jumps, a speed button cycling `0.5x → 3x`, and a reverse button (`-1x` / `-2x`). Browsers can't play video truly backwards, so reverse is simulated by stepping the timeline back — slightly steppy, but it works. Drag the pill anywhere; it remembers its spot. The `–` button shrinks it to a chip, and the toolbar popup can hide it entirely.
+While a reel plays, a small pill sits over the video: play/pause, a timeline you can click or drag to scrub, `-5s` / `+5s` jumps, a speed button cycling `0.5x → 3x`, and a reverse button (`-1x` / `-2x`). Browsers can't play video truly backwards, so reverse is simulated by stepping the timeline back — slightly steppy, but it works. The last button pops the video into picture-in-picture so it floats over other tabs. The floating window has its own previous/next buttons that switch reels, and it follows you to the new reel when it can (timer-driven advances have no click gesture to spend, so then it closes and inline playback continues). Keys and wheel need the *tab* focused — when the floating window itself is focused, use its built-in buttons or your keyboard's media keys. When a reel finishes, the next one loads automatically, in the page or in PiP (toggle in the toolbar popup). Drag the pill anywhere; it remembers its spot. The `–` button shrinks it to a chip, and the toolbar popup can hide it entirely.
 
 ## How it works
 
