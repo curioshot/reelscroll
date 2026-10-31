@@ -250,7 +250,7 @@
       const behavior = settings.smooth ? 'smooth' : 'auto';
       window.scrollBy({ top: (dirDown ? 1 : -1) * window.innerHeight * 0.9, behavior });
     }
-    showToast(source === 'prev' ? '▲' : '▼', source);
+    showToast(dirDown ? '▼' : '▲');
     return true;
   }
 
@@ -290,11 +290,11 @@
     // Ignore horizontal/trackpad-horizontal gestures.
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
     if (Math.abs(e.deltaY) < settings.wheelThreshold) return;
+    if (isNestedScrollable(e.target)) return; // let comment sheets scroll (also during cooldown)
     if (!canNavigate()) {
       e.preventDefault();
       return;
     }
-    if (isNestedScrollable(e.target)) return; // let comment sheets scroll
 
     let down = e.deltaY > 0;
     if (settings.invertWheel) down = !down;

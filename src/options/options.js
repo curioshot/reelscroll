@@ -13,6 +13,15 @@ const DEFAULTS = {
   allowArrows: false
 };
 
+// Full factory state, including controller settings the options page doesn't show.
+const RESET_ALL = {
+  ...DEFAULTS,
+  controllerEnabled: true,
+  autoAdvance: true,
+  controllerMini: false,
+  controllerPos: null
+};
+
 function prettyLabel(e) {
   if (e.key === ' ') return 'Space';
   if (e.key === 'ArrowUp') return '↑';
@@ -109,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     (code, label) => ({ nextKey: code, nextLabel: label }));
 
   document.getElementById('reset').addEventListener('click', async () => {
-    await chrome.storage.sync.set(DEFAULTS);
+    await chrome.storage.sync.set(RESET_ALL);
     prevBtn.textContent = DEFAULTS.prevLabel;
     nextBtn.textContent = DEFAULTS.nextLabel;
     enabled.checked = DEFAULTS.enabled;

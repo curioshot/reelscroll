@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ReelScroll",
   "short_name": "ReelScroll",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Scroll Instagram Reels with mouse wheel, custom up/down keys, and keyboard media keys (next/prev track).",
   "minimum_chrome_version": "109",
   "permissions": ["storage"],
