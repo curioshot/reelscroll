@@ -453,10 +453,18 @@
   // and wins outright; MSE videos expose only a blob:, so the URL must come
   // from the network entries fetched since this reel bound to the element
   // (a per-reel baseline, NOT clearResourceTimings — that wipes the shared
-  // buffer and can erase the very entries we need). Biggest response wins;
-  // if sizes are hidden (no Timing-Allow-Origin, all zero), the newest entry
-  // is a mid-stream media chunk in practice, so take that. The validator
-  // fetch below keeps any wrong guess out of the Downloads folder.
+  // buffer and can erase the very entries we need).
+  //
+  // IG's CDN is segment-based: every request URL carries &bytestart=N and
+  // &byteend=M, and fetching the segment URL back returns just that bytes
+  // range — a fragment with no ftyp/moov, which plays as nothing (the classic
+  // "downloaded but contains nothing" file). Verified live: the same signed
+  // asset path WITHOUT those two params serves the whole MP4 (200, ftyp at
+  // byte 4). So entries are grouped per asset path (query ignored), audio
+  // lanes are skipped — the audio asset carries &efg=...heaac..., a base64
+  // tag naming the codec — and the most recently active video asset wins.
+  // The Range/0- header is sent next anyway because some CDNs require it;
+  // IG ignores the header when bytestart params exist but honours it here.
   function pickVideoFileUrl() {
     if (!video) return null;
     const src = video.currentSrc || video.src || '';
@@ -465,10 +473,28 @@
       /^https:/.test(e.name) && /\.mp4(\?|$)/.test(e.name) &&
       e.startTime >= bindMarkAt - 250);
     if (!entries.length) return null;
-    const big = entries.filter((e) => (e.encodedBodySize || 0) > 60000);
-    const pool = big.length ? big : [entries[entries.length - 1]];
-    pool.sort((a, b) => (b.encodedBodySize || 0) - (a.encodedBodySize || 0) || b.startTime - a.startTime);
-    return { url: pool[0].name, whole: false };
+    const assets = new Map();
+    for (const e of entries) {
+      let u;
+      try { u = new URL(e.name); } catch (err) { continue; }
+      const asset = u.origin + u.pathname;
+      let rec = assets.get(asset);
+      if (!rec) { rec = { last: 0, name: e.name, audio: false }; assets.set(asset, rec); }
+      if (e.startTime > rec.last) { rec.last = e.startTime; rec.name = e.name; }
+      const efg = u.searchParams.get('efg') || '';
+      try {
+        if (/heaac|aac/i.test(atob(efg))) rec.audio = true;
+      } catch (err) {
+        // Non-base64 efg: assume video, the ftyp check guards the save.
+      }
+    }
+    const vids = [...assets.values()].filter((a) => !a.audio);
+    if (!vids.length) return null;
+    vids.sort((a, b) => b.last - a.last);
+    const fullUrl = new URL(vids[0].name);
+    fullUrl.searchParams.delete('bytestart');
+    fullUrl.searchParams.delete('byteend');
+    return { url: fullUrl.href, whole: false };
   }
 
   function fileNameFor(url) {
@@ -506,11 +532,15 @@
       return;
     }
     // For picked-from-network URLs, fetch in the page first, WITH the Range
-    // header: range-hungry CDNs (IG's included) answer a plain GET with 400,
-    // but `bytes=0-` gets the full file as 206 either way. Validated type +
-    // size, then Chrome saves a named blob — a stray fragment or an HTML
-    // error page can never land in Downloads this way. If the header trips
-    // CORS, retry plain; if that fails too, the worker route runs as before.
+    // header: `bytes=0-` gets the full file as 206/200 either way. The blob
+    // is only saved when it really is an MP4 from byte 0 (ftyp box) and big
+    // enough to be media — an audio lane, a fragment, or an HTML error page
+    // can never land in Downloads. If the header trips CORS, retry plain;
+    // if that fails too, the worker route runs as before.
+    const looksLikeMp4 = async (blob) => {
+      const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+      return head.length === 8 && String.fromCharCode(...head.slice(4)) === 'ftyp';
+    };
     if (!pick.whole) {
       const attempts = [
         () => fetch(pick.url, { headers: { Range: 'bytes=0-' } }),
@@ -522,7 +552,8 @@
           const type = res.headers.get('content-type') || '';
           const blob = res.ok ? await res.blob() : null;
           if (blob && blob.size > 60000 &&
-              (type.includes('video/') || type.includes('octet-stream'))) {
+              (type.includes('video/') || type.includes('octet-stream')) &&
+              (await looksLikeMp4(blob))) {
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = fileNameFor(pick.url);

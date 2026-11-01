@@ -2,11 +2,17 @@
   "manifest_version": 3,
   "name": "ReelScroll",
   "short_name": "ReelScroll",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Scroll Instagram Reels with mouse wheel, custom up/down keys, and keyboard media keys. Includes a floating video controller (timeline, speed, download) for any Instagram video.",
   "minimum_chrome_version": "109",
-  "permissions": ["storage", "downloads"],
-  "host_permissions": ["https://www.instagram.com/*", "https://instagram.com/*"],
+  "permissions": [
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://www.instagram.com/*",
+    "https://instagram.com/*"
+  ],
   "background": {
     "service_worker": "src/background/service-worker.js"
   },
@@ -30,9 +36,17 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.instagram.com/*", "https://instagram.com/*"],
-      "js": ["src/content/reels.js", "src/content/controller.js"],
-      "css": ["src/content/reels.css"],
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
+      ],
+      "js": [
+        "src/content/reels.js",
+        "src/content/controller.js"
+      ],
+      "css": [
+        "src/content/reels.css"
+      ],
       "run_at": "document_idle"
     }
   ],
