@@ -50,6 +50,33 @@ async function sendToReelsTabs(message) {
   return results;
 }
 
+// Download button: hand the URL to Chrome's downloader (no CORS, no hosts needed).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || message.type !== 'REELS_DOWNLOAD') return;
+  const url = typeof message.url === 'string' ? message.url.trim() : '';
+  saveVideo(url, (res) => sendResponse(res));
+  return true; // the answer comes from the download callback
+});
+
+function saveVideo(url, done) {
+  if (!/^https:\/\//.test(url)) return done({ ok: false, error: 'no direct file URL' });
+  let name = '';
+  try {
+    name = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+  } catch (err) {
+    // Malformed URL: fall through with an empty basename.
+  }
+  name = name.replace(/[^\w.\-]+/g, '_').slice(-60) || 'instagram-video.mp4';
+  if (!/\.mp4$/i.test(name)) name += '.mp4';
+  try {
+    chrome.downloads.download({ url, filename: name, saveAs: false }, (id) => {
+      done({ ok: id != null });
+    });
+  } catch (err) {
+    done({ ok: false, error: 'download refused' });
+  }
+}
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'next-reel' && command !== 'prev-reel') return;
   const { enabled = true } = await chrome.storage.sync.get('enabled');

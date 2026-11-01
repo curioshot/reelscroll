@@ -1,4 +1,5 @@
-/* ReelScroll — in-reel video controller (isolated world, Shadow DOM so IG styles can't touch it) */
+/* ReelScroll — video controller for every IG video (isolated world, Shadow DOM so IG styles can't touch it).
+   Navigation scaffolding (next/prev, auto-advance, wheel) stays Reels-only via reels.js. */
 (() => {
   'use strict';
 
@@ -34,6 +35,7 @@
   let wantPip = false; // user wants the float open; follows reels while it can
   let pipFollow = false; // transitional: ignore the leave event of a migration
   let pipGen = 0; // generation counter: overlapping followPip() calls don't clear each other
+  let bindMarkAt = 0; // performance.now() of the last video bind/src swap: download entries must postdate it
 
   const SVG = {
     back: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="2" y="3" width="2" height="10" fill="currentColor"/><path d="M13 3v10L5.5 8 13 3z" fill="currentColor"/></svg>',
@@ -41,6 +43,7 @@
     play: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5v11l8.5-5.5L4 2.5z" fill="currentColor"/></svg>',
     pause: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3.5" y="2.5" width="3.4" height="11" fill="currentColor"/><rect x="9.1" y="2.5" width="3.4" height="11" fill="currentColor"/></svg>',
     rev: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M12 3v10L4.5 8 12 3z" fill="currentColor"/></svg>',
+    dl: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 2.5v7M5 7l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
     pip: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="3" width="13" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7.5" width="4.5" height="3.4" rx="0.8" fill="currentColor"/></svg>'
   };
 
@@ -109,8 +112,11 @@
     return p === '/reels' || p === '/reels/' || p.startsWith('/reels/') || p.startsWith('/reel/');
   }
 
-  function isActive() {
-    return settings.enabled && settings.controllerEnabled && isReelsPage();
+  // Pill + media tools show wherever a video plays. Reels-only behavior is
+  // gated separately: the auto-advance/wheel path checks isReelsPage(), and
+  // navigation itself lives in reels.js.
+  function controllerActive() {
+    return settings.enabled && settings.controllerEnabled;
   }
 
   function fmt(t) {
@@ -154,7 +160,8 @@
         navigator.mediaSession.setActionHandler('nexttrack', () => {
           window.dispatchEvent(new CustomEvent('reelscroll:next', { detail: { source: 'media-session' } }));
         });
-        navigator.mediaSession.metadata = new MediaMetadata({ title: 'Instagram Reel', artist: 'ReelScroll' });
+        // Media keys map to Reels turns; on other pages the events no-op in reels.js.
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'Instagram Video', artist: 'ReelScroll' });
       } else {
         navigator.mediaSession.setActionHandler('previoustrack', null);
         navigator.mediaSession.setActionHandler('nexttrack', null);
@@ -180,6 +187,7 @@
     if (!video) return;
     origLoop = video.loop;
     stripLocks(video);
+    bindMarkAt = performance.now();
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('play', onPlay);
     video.addEventListener('ended', onEnded);
@@ -212,13 +220,14 @@
 
   // Instagram ships reels with loop + disablepictureinpicture (+ controlslist).
   // A looping video never fires `ended`, and a PiP-blocked one refuses the float.
-  // With auto-advance on we take the loop off so the reel can actually finish;
-  // the PiP locks come off whenever we're bound (React re-adds attrs, tick re-strips).
+  // On Reels pages with auto-advance we take the loop off so the reel can finish;
+  // feed/story loops stay intact. The PiP locks come off whenever we're bound
+  // (React re-adds attrs, tick re-strips).
   function stripLocks(v) {
     try {
       v.removeAttribute('disablepictureinpicture');
       v.removeAttribute('controlslist');
-      if (settings.autoAdvance && v.loop) v.loop = false;
+      if (settings.autoAdvance && isReelsPage() && v.loop) v.loop = false;
     } catch (err) {
       // Player ignores it: the watchdog still catches the wrap.
     }
@@ -263,7 +272,7 @@
   function scheduleAdvance() {
     // Queue only: pumpAdvance (called from rAF AND timeupdate) does the timed
     // dispatch. Polled state survives video-element swaps that would kill a timer.
-    if (!settings.autoAdvance || !video) return;
+    if (!settings.autoAdvance || !isReelsPage() || !video) return;
     if (pendingAdvance && pendingAdvance.el === video) return;
     pendingAdvance = { el: video, src: video.currentSrc, fireAt: Date.now() + 800, retried: false };
   }
@@ -273,7 +282,7 @@
   }
 
   function pumpAdvance() {
-    if (!pendingAdvance || !settings.autoAdvance || !video) return;
+    if (!pendingAdvance || !settings.autoAdvance || !isReelsPage() || !video) return;
     // Element identity first (same-element src swaps keep it), src second
     // (a reused element showing a new reel cancels it). Empty src never mismatches.
     if (video !== pendingAdvance.el ||
@@ -303,6 +312,7 @@
   // Fires once per reel; re-arms when the user scrubs back away from the end.
   function checkNearEnd() {
     if (!video || !settings.autoAdvance) return;
+    if (!isReelsPage()) return; // feed/other pages: no auto-advance, no watchdog
     pumpAdvance(); // first: an `ended`-queued turn must fire even with unknown duration
     const dur = effectiveDuration(video);
     if (!isFinite(dur)) return;
@@ -439,6 +449,105 @@
     }
   }
 
+  // Best file URL for the download button. A direct MP4 src is the whole file
+  // and wins outright; MSE videos expose only a blob:, so the URL must come
+  // from the network entries fetched since this reel bound to the element
+  // (a per-reel baseline, NOT clearResourceTimings — that wipes the shared
+  // buffer and can erase the very entries we need). Biggest response wins;
+  // if sizes are hidden (no Timing-Allow-Origin, all zero), the newest entry
+  // is a mid-stream media chunk in practice, so take that. The validator
+  // fetch below keeps any wrong guess out of the Downloads folder.
+  function pickVideoFileUrl() {
+    if (!video) return null;
+    const src = video.currentSrc || video.src || '';
+    if (/^https:/.test(src)) return { url: src, whole: true };
+    const entries = performance.getEntriesByType('resource').filter((e) =>
+      /^https:/.test(e.name) && /\.mp4(\?|$)/.test(e.name) &&
+      e.startTime >= bindMarkAt - 250);
+    if (!entries.length) return null;
+    const big = entries.filter((e) => (e.encodedBodySize || 0) > 60000);
+    const pool = big.length ? big : [entries[entries.length - 1]];
+    pool.sort((a, b) => (b.encodedBodySize || 0) - (a.encodedBodySize || 0) || b.startTime - a.startTime);
+    return { url: pool[0].name, whole: false };
+  }
+
+  function fileNameFor(url) {
+    let name = '';
+    try {
+      name = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+    } catch (err) {
+      // Malformed URL: fall back to a generic name.
+    }
+    name = name.replace(/[^\w.\-]+/g, '_').slice(-60) || 'instagram-video.mp4';
+    if (!/\.mp4$/i.test(name)) name += '.mp4';
+    return name;
+  }
+
+  // The service worker hands the URL to Chrome's downloader, so no CORS and
+  // no extra host permissions are involved.
+  function flashDl(good, note) {
+    if (!els.dl) return;
+    els.dl.classList.toggle('on', !!good);
+    if (note) els.dl.title = note;
+    clearTimeout(flashDl._t);
+    flashDl._t = setTimeout(() => {
+      if (els.dl) {
+        els.dl.classList.remove('on');
+        els.dl.title = 'Download video';
+      }
+    }, 1500);
+  }
+
+  async function downloadVideo() {
+    if (!video) return;
+    const pick = pickVideoFileUrl();
+    if (!pick) {
+      flashDl(false, 'Not downloadable');
+      return;
+    }
+    // For picked-from-network URLs, fetch in the page first, WITH the Range
+    // header: range-hungry CDNs (IG's included) answer a plain GET with 400,
+    // but `bytes=0-` gets the full file as 206 either way. Validated type +
+    // size, then Chrome saves a named blob — a stray fragment or an HTML
+    // error page can never land in Downloads this way. If the header trips
+    // CORS, retry plain; if that fails too, the worker route runs as before.
+    if (!pick.whole) {
+      const attempts = [
+        () => fetch(pick.url, { headers: { Range: 'bytes=0-' } }),
+        () => fetch(pick.url)
+      ];
+      for (const attempt of attempts) {
+        try {
+          const res = await attempt();
+          const type = res.headers.get('content-type') || '';
+          const blob = res.ok ? await res.blob() : null;
+          if (blob && blob.size > 60000 &&
+              (type.includes('video/') || type.includes('octet-stream'))) {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileNameFor(pick.url);
+            document.documentElement.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+            flashDl(true, 'Saved ✓');
+            return;
+          }
+        } catch (err) {
+          // CORS on the Range header or a dead network: try the next path.
+        }
+      }
+    }
+    try {
+      chrome.runtime.sendMessage({ type: 'REELS_DOWNLOAD', url: pick.url }, (res) => {
+        if (chrome.runtime.lastError) return; // worker asleep: it saves silently
+        flashDl(!!(res && res.ok), res && res.ok ? 'Saved ✓' : 'Download failed');
+      });
+    } catch (err) {
+      flashDl(false, 'Download failed');
+    }
+  }
+
   function stopReverse() {
     reverseRate = 0;
     clearInterval(reverseTimer);
@@ -564,7 +673,7 @@
 
   function applyVisibility() {
     if (!els.pill) return;
-    const show = isActive() && !!video;
+    const show = controllerActive() && !!video;
     els.pill.classList.toggle('hidden', !show || settings.controllerMini);
     els.chip.classList.toggle('hidden', !show || !settings.controllerMini);
   }
@@ -584,6 +693,7 @@
       '<span class="time">--:-- / --:--</span>' +
       '<div class="track"><div class="rail"><div class="fill"></div></div></div>' +
       '<button data-act="fwd" title="Forward 5s">' + SVG.fwd + '</button>' +
+      '<button data-act="dl" title="Download video">' + SVG.dl + '</button>' +
       '<button data-act="speed" class="speed" title="Playback speed">1x</button>' +
       '<button data-act="rev" title="Reverse play">rev</button>' +
       '<button data-act="pip" title="Picture-in-picture">' + SVG.pip + '</button>' +
@@ -606,7 +716,8 @@
       fill: pill.querySelector('.fill'),
       speed: pill.querySelector('[data-act="speed"]'),
       rev: pill.querySelector('[data-act="rev"]'),
-      pip: pill.querySelector('[data-act="pip"]')
+      pip: pill.querySelector('[data-act="pip"]'),
+      dl: pill.querySelector('[data-act="dl"]')
     };
 
     pill.querySelector('[data-act="back"]').addEventListener('click', () => nudgeSecs(-5));
@@ -615,6 +726,7 @@
     els.speed.addEventListener('click', cycleSpeed);
     els.rev.addEventListener('click', cycleReverse);
     els.pip.addEventListener('click', togglePip);
+    els.dl.addEventListener('click', downloadVideo);
     pill.querySelector('[data-act="mini"]').addEventListener('click', () => {
       chrome.storage.sync.set({ controllerMini: true });
       settings.controllerMini = true;
@@ -681,7 +793,7 @@
     // Re-detect twice a second: cheap, catches reel switches the observer misses.
     if (now - lastDetectAt > 500) {
       lastDetectAt = now;
-      if (isActive()) {
+      if (controllerActive()) {
         bindVideo(detectVideo());
         if (video) {
           // Same element, new reel (IG reuses <video>): reset end-tracking so the
@@ -692,6 +804,7 @@
             advancedFor = null;
             pendingAdvance = null;
             clearEndedStampFor(video.currentSrc);
+            bindMarkAt = performance.now();
           }
           // React re-adds attrs and resets rate on source swaps; heal both.
           stripLocks(video);
