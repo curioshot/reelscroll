@@ -74,7 +74,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const s = await load();
 
   const enabled = document.getElementById('enabled');
-  const wheelEnabled = document.getElementById('wheelEnabled');
   const invertWheel = document.getElementById('invertWheel');
   const smooth = document.getElementById('smooth');
   const allowArrows = document.getElementById('allowArrows');
@@ -86,7 +85,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const nextBtn = document.getElementById('nextCapture');
 
   enabled.checked = s.enabled;
-  wheelEnabled.checked = s.wheelEnabled;
   invertWheel.checked = s.invertWheel;
   smooth.checked = s.smooth;
   allowArrows.checked = s.allowArrows;
@@ -103,7 +101,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   enabled.addEventListener('change', () => save({ enabled: enabled.checked }));
-  wheelEnabled.addEventListener('change', () => save({ wheelEnabled: wheelEnabled.checked }));
   invertWheel.addEventListener('change', () => save({ invertWheel: invertWheel.checked }));
   smooth.addEventListener('change', () => save({ smooth: smooth.checked }));
   allowArrows.addEventListener('change', () => save({ allowArrows: allowArrows.checked }));
@@ -122,7 +119,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     prevBtn.textContent = DEFAULTS.prevLabel;
     nextBtn.textContent = DEFAULTS.nextLabel;
     enabled.checked = DEFAULTS.enabled;
-    wheelEnabled.checked = DEFAULTS.wheelEnabled;
     invertWheel.checked = DEFAULTS.invertWheel;
     smooth.checked = DEFAULTS.smooth;
     allowArrows.checked = DEFAULTS.allowArrows;
