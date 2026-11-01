@@ -1,11 +1,8 @@
-/* ReelScroll options: fully customizable up/down keys + wheel tuning. No inline handlers. */
+/* ReelScroll options: fully customizable up/down keys + scroll feel. No inline handlers. */
 const DEFAULTS = {
   enabled: true,
-  wheelEnabled: true,
-  invertWheel: false,
   smooth: true,
   cooldownMs: 800,
-  wheelThreshold: 30,
   nextKey: 'KeyS',
   prevKey: 'KeyW',
   nextLabel: 'S',
@@ -74,24 +71,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const s = await load();
 
   const enabled = document.getElementById('enabled');
-  const invertWheel = document.getElementById('invertWheel');
   const smooth = document.getElementById('smooth');
   const allowArrows = document.getElementById('allowArrows');
   const cooldown = document.getElementById('cooldownMs');
   const cooldownVal = document.getElementById('cooldownVal');
-  const threshold = document.getElementById('wheelThreshold');
-  const thresholdVal = document.getElementById('wheelThresholdVal');
   const prevBtn = document.getElementById('prevCapture');
   const nextBtn = document.getElementById('nextCapture');
 
   enabled.checked = s.enabled;
-  invertWheel.checked = s.invertWheel;
   smooth.checked = s.smooth;
   allowArrows.checked = s.allowArrows;
   cooldown.value = s.cooldownMs;
-  threshold.value = s.wheelThreshold;
   cooldownVal.textContent = `${s.cooldownMs} ms`;
-  thresholdVal.textContent = `${s.wheelThreshold} px`;
   prevBtn.textContent = s.prevLabel;
   nextBtn.textContent = s.nextLabel;
 
@@ -101,13 +92,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   enabled.addEventListener('change', () => save({ enabled: enabled.checked }));
-  invertWheel.addEventListener('change', () => save({ invertWheel: invertWheel.checked }));
   smooth.addEventListener('change', () => save({ smooth: smooth.checked }));
   allowArrows.addEventListener('change', () => save({ allowArrows: allowArrows.checked }));
   cooldown.addEventListener('input', () => { cooldownVal.textContent = `${cooldown.value} ms`; });
   cooldown.addEventListener('change', () => save({ cooldownMs: Number(cooldown.value) }));
-  threshold.addEventListener('input', () => { thresholdVal.textContent = `${threshold.value} px`; });
-  threshold.addEventListener('change', () => save({ wheelThreshold: Number(threshold.value) }));
 
   armCapture(prevBtn, () => ({ label: prevBtn.textContent }),
     (code, label) => ({ prevKey: code, prevLabel: label }));
@@ -119,13 +107,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     prevBtn.textContent = DEFAULTS.prevLabel;
     nextBtn.textContent = DEFAULTS.nextLabel;
     enabled.checked = DEFAULTS.enabled;
-    invertWheel.checked = DEFAULTS.invertWheel;
     smooth.checked = DEFAULTS.smooth;
     allowArrows.checked = DEFAULTS.allowArrows;
     cooldown.value = DEFAULTS.cooldownMs;
-    threshold.value = DEFAULTS.wheelThreshold;
     cooldownVal.textContent = `${DEFAULTS.cooldownMs} ms`;
-    thresholdVal.textContent = `${DEFAULTS.wheelThreshold} px`;
     flash('Defaults restored ✓');
   });
 });

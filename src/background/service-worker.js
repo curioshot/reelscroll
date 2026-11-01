@@ -2,16 +2,13 @@
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  wheelEnabled: true,
   controllerEnabled: true,
   autoAdvance: true,
   playbackRate: 1,
   controllerMini: false,
   controllerPos: null,
-  invertWheel: false,
   smooth: true,
   cooldownMs: 800,
-  wheelThreshold: 30,
   nextKey: 'KeyS',
   prevKey: 'KeyW',
   nextLabel: 'S',

@@ -1,5 +1,5 @@
 /* ReelScroll — video controller for every IG video (isolated world, Shadow DOM so IG styles can't touch it).
-   Navigation scaffolding (next/prev, auto-advance, wheel) stays Reels-only via reels.js. */
+   Navigation scaffolding (next/prev, auto-advance) stays Reels-only via reels.js. */
 (() => {
   'use strict';
 
@@ -113,7 +113,7 @@
   }
 
   // Pill + media tools show wherever a video plays. Reels-only behavior is
-  // gated separately: the auto-advance/wheel path checks isReelsPage(), and
+  // gated separately: auto-advance checks isReelsPage(), and
   // navigation itself lives in reels.js.
   function controllerActive() {
     return settings.enabled && settings.controllerEnabled;
@@ -398,7 +398,7 @@
   }
 
   // Move the floating window onto the newly centered reel.
-  // Request FIRST without closing: when Chrome allows it (key/wheel/PiP-button
+  // Request FIRST without closing: when Chrome allows it (key/PiP-button
   // navs carry a gesture) the old float is replaced seamlessly. Timer-driven
   // auto-advance has no gesture to spend, so that path closes the float instead.
   async function followPip() {

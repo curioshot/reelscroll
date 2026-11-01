@@ -4,11 +4,8 @@
 
   const DEFAULTS = {
     enabled: true,
-    wheelEnabled: true,
-    invertWheel: false,
     smooth: true,
     cooldownMs: 800,
-    wheelThreshold: 30,
     nextKey: 'KeyS',
     prevKey: 'KeyW',
     nextLabel: 'S',
@@ -283,27 +280,6 @@
     toastTimer = setTimeout(() => toastEl.classList.remove('irs-show'), 450);
   }
 
-  function onWheel(e) {
-    if (!isActive() || !settings.wheelEnabled) return;
-    if (fromController(e.target)) return;
-    if (isEditable(e.target)) return;
-    // Ignore horizontal/trackpad-horizontal gestures.
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-    if (Math.abs(e.deltaY) < settings.wheelThreshold) return;
-    if (isNestedScrollable(e.target)) return; // let comment sheets scroll (also during cooldown)
-    if (!canNavigate()) {
-      e.preventDefault();
-      return;
-    }
-
-    let down = e.deltaY > 0;
-    if (settings.invertWheel) down = !down;
-    e.preventDefault();
-    e.stopPropagation();
-    if (down) goNext('wheel');
-    else goPrev('wheel');
-  }
-
   function onKeyDown(e) {
     if (!isActive()) return;
     if (fromController(e.target)) return;
@@ -374,7 +350,6 @@
     await loadSettings();
     refreshCandidates();
     initObservers();
-    window.addEventListener('wheel', onWheel, { passive: false, capture: true });
     window.addEventListener('keydown', onKeyDown, { capture: true });
     window.addEventListener('resize', scheduleRescan);
     // Local bridge: the video controller pill asks for turns the same way keys do.
