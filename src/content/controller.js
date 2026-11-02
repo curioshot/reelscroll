@@ -34,6 +34,10 @@
   let lastSeekAt = 0; // our own seeks never count as loop wraps
   let pipGen = 0; // generation counter: overlapping followPip() calls don't clear each other
   let bindMarkAt = 0; // performance.now() of the last video bind/src swap: download entries must postdate it
+  // Loop range state
+  let loopStart = null; // seconds
+  let loopEnd = null;   // seconds
+  let loopActive = false;
 
   // Anchor system
   const ANCHORS = {
@@ -64,6 +68,8 @@
     pip: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2" y="4" width="12" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="8.5" width="5" height="3.5" rx="0.8" fill="currentColor"/></svg>',
     speed: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 11h10M3 11l2-4 2 4 2-4 2 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     minimize: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    loopStart: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 4v8l7-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    loopEnd: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11 4v8l-7-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     help: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 5v3M8 10v.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
   };
 
@@ -1448,6 +1454,8 @@
     els.rev.innerHTML = SVG.rev + '<span>' + (reverseRate !== 0 ? '-' + reverseRate + 'x' : 'rev') + '</span>';
     els.pip.classList.toggle('on', !!document.pictureInPictureElement);
     els.chipText.textContent = (reverseRate !== 0 ? '-' + reverseRate + 'x' : settings.playbackRate + 'x');
+    els.loopStart.classList.toggle('active', loopActive && loopStart !== null);
+    els.loopEnd.classList.toggle('active', loopActive && loopEnd !== null);
   }
 
   function applyVisibility() {
@@ -1563,6 +1571,8 @@
         '<button class="segmented-btn" data-rev="2" aria-pressed="false">-2×</button>' +
       '</div>' +
       '<button data-act="pip" title="Picture-in-picture" aria-label="Toggle picture-in-picture">' + SVG.pip + '</button>' +
+      '<button data-act="loop-start" title="Loop start" aria-label="Set loop start">' + SVG.loopStart + '</button>' +
+      '<button data-act="loop-end" title="Loop end" aria-label="Set loop end">' + SVG.loopEnd + '</button>' +
       '<button data-act="mini" title="Minimize" aria-label="Minimize controller">' + SVG.minimize + '</button>' +
       '<button class="help-btn" data-act="help" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">' + SVG.help + '</button>' +
       '<button data-act="overflow" title="More options" aria-label="More options" class="overflow-btn">...</button>' +
@@ -1651,6 +1661,8 @@
       pip: pill.querySelector('[data-act="pip"]'),
       dl: pill.querySelector('[data-act="dl"]'),
       help: pill.querySelector('[data-act="help"]'),
+      loopStart: pill.querySelector('[data-act="loop-start"]'),
+      loopEnd: pill.querySelector('[data-act="loop-end"]'),
       shortcutsOverlay: shortcutsOverlay,
       shortcutsClose: shortcutsOverlay.querySelector('.shortcuts-close'),
       overflowBtn: pill.querySelector('[data-act="overflow"]'),
@@ -1672,6 +1684,20 @@
       settings.controllerMini = true;
       chrome.storage.sync.set({ controllerMini: true });
       applyVisibility();
+    });
+    pill.querySelector('[data-act="loop-start"]').addEventListener('click', () => {
+      if (video) {
+        loopStart = video.currentTime;
+        loopActive = true;
+        paint();
+      }
+    });
+    pill.querySelector('[data-act="loop-end"]').addEventListener('click', () => {
+      if (video) {
+        loopEnd = video.currentTime;
+        loopActive = true;
+        paint();
+      }
     });
     chip.addEventListener('click', () => {
       settings.controllerMini = false;
@@ -2013,6 +2039,15 @@
       }
     });
 
+    // Global D key to download current reel
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+        downloadVideo();
+      }
+    });
+
     // Initial position: use saved free position, or apply anchor
     if (settings.controllerPos && settings.controllerAnchor === 'free') {
       pill.style.left = settings.controllerPos.left;
@@ -2105,6 +2140,14 @@
     // End watchdog: catches reels whose `ended` never fires (loop, MSE, races).
     // Fires once per reel; re-arms when the user scrubs back away from the end.
     checkNearEnd();
+
+    // Loop range: when video reaches loopEnd, jump back to loopStart
+    if (loopActive && loopStart !== null && loopEnd !== null && video) {
+      if (video.currentTime >= loopEnd - 0.1) {
+        video.currentTime = loopStart;
+      }
+    }
+
     if (video && !seeking && (frame % 6 === 0)) paint();
     requestAnimationFrame(tick);
   }
