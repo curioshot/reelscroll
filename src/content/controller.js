@@ -421,6 +421,7 @@
     button.downloading .dl-ring circle {
       fill: none; stroke: var(--rs-accent); stroke-width: 2.5;
       stroke-linecap: round; stroke-dasharray: 88;
+      stroke-dashoffset: var(--dl-progress, 88);
       transition: stroke-dashoffset 0.2s linear;
       r: 14; cx: 16; cy: 16;
     }
@@ -679,6 +680,10 @@
     unbindVideo();
     video = v;
     stopReverse();
+    // Reset loop range when video changes
+    loopStart = null;
+    loopEnd = null;
+    loopActive = false;
     // A pending advance survives rebinds; pumpAdvance drops it once the
     // centered video is a different reel. Only a truly empty feed cancels.
     if (!v) pendingAdvance = null;
@@ -1894,32 +1899,6 @@
       seeking = false;
       els.track.classList.remove('dragging');
     };
-    // Touch gesture handlers for timeline
-    let touchStartX = 0;
-    let touchStartTime = 0;
-
-    els.rail.addEventListener('touchstart', (e) => {
-      touchStartX = e.touches[0].clientX;
-      touchStartTime = Date.now();
-    });
-
-    els.rail.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - touchStartX;
-      const railRect = els.rail.getBoundingClientRect();
-      const width = railRect.width;
-      const dxFrac = dx / width;
-      const step = dxFrac * 10; // 10 seconds per full rail width
-      const targetTime = video.currentTime + step;
-      video.currentTime = Math.max(0, Math.min(video.duration, targetTime));
-      paint();
-      touchStartX = e.touches[0].clientX;
-    });
-
-    els.rail.addEventListener('touchend', () => {
-      touchStartX = 0;
-    });
-
     // Pinch-to-zoom scrub: two-finger pinch changes seek sensitivity
     let pinchStartDist = 0;
     let pinchStartTime = video.currentTime;
