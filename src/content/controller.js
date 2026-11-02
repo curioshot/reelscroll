@@ -172,6 +172,23 @@
       padding: calc(var(--rs-pad-y) - 1px) calc(var(--rs-pad-x) + 2px); cursor: pointer;
     }
 
+    /* Compact mode styling */
+    .pill.compact {
+      width: 100px;
+      justify-content: space-between;
+      padding: var(--rs-pad-y) calc(var(--rs-pad-x) / 2);
+    }
+    .pill.compact .track { display: none; }
+    .pill.compact .time { display: none; }
+    .pill.compact .speed { width: auto; min-width: auto; font-size: 11px; }
+    .pill.compact button { width: 24px; height: 24px; }
+    .chip.compact { width: 70px; justify-content: space-between; }
+    .chip.compact .chipText { font-size: 11px; }
+
+
+
+
+
     .hidden { display: none !important; }
 
     button {
@@ -248,6 +265,112 @@
     }
 
     .track.disabled { opacity: 0.35; pointer-events: none; }
+
+    /* Compact mode */
+    .pill.compact {
+      width: 100px;
+      justify-content: space-between;
+      padding: var(--rs-pad-y) calc(var(--rs-pad-x) / 2);
+    }
+    .pill.compact .track { display: none; }
+    .pill.compact .time { display: none; }
+    .pill.compact .speed { width: auto; min-width: auto; font-size: 11px; }
+    .pill.compact button { width: 24px; height: 24px; }
+    .chip.compact { width: 70px; justify-content: space-between; }
+    .chip.compact .chipText { font-size: 11px; }
+
+    /* Overflow menu (shown in compact mode) */
+    .overflow-menu {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      right: 0;
+      background: var(--rs-bg);
+      border: 1px solid var(--rs-border);
+      border-radius: var(--rs-radius);
+      box-shadow: var(--rs-shadow);
+      backdrop-filter: blur(8px);
+      padding: 6px;
+      min-width: 120px;
+      z-index: 51;
+      animation: rs-pop-in var(--rs-transition) ease-out;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity var(--rs-transition), transform var(--rs-transition);
+    }
+    .overflow-menu.open {
+      pointer-events: auto;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .overflow-item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 8px 10px; border-radius: 6px;
+      background: transparent; border: none; color: var(--rs-text);
+      font: var(--rs-font); font-size: 13px; cursor: pointer;
+      text-align: left;
+    }
+    .overflow-item:hover, .overflow-item:focus {
+      background: var(--rs-bg-hover);
+    }
+    .overflow-item:focus-visible {
+      outline: 2px solid var(--rs-accent); outline-offset: -2px;
+    }
+
+
+
+    /* Compact mode */
+    .pill.compact {
+      width: 100px;
+      justify-content: space-between;
+      padding: var(--rs-pad-y) calc(var(--rs-pad-x) / 2);
+    }
+    .pill.compact .track { display: none; }
+    .pill.compact .time { display: none; }
+    .pill.compact .speed { width: auto; min-width: auto; font-size: 11px; }
+    .pill.compact button { width: 24px; height: 24px; }
+    .chip.compact { width: 70px; justify-content: space-between; }
+    .chip.compact .chipText { font-size: 11px; }
+
+    /* Overflow menu (shown in compact mode) */
+    .overflow-menu {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      right: 0;
+      background: var(--rs-bg);
+      border: 1px solid var(--rs-border);
+      border-radius: var(--rs-radius);
+      box-shadow: var(--rs-shadow);
+      backdrop-filter: blur(8px);
+      padding: 6px;
+      min-width: 120px;
+      z-index: 51;
+      animation: rs-pop-in var(--rs-transition) ease-out;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity var(--rs-transition), transform var(--rs-transition);
+    }
+    .overflow-menu.open {
+      pointer-events: auto;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .overflow-item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 8px 10px; border-radius: 6px;
+      background: transparent; border: none; color: var(--rs-text);
+      font: var(--rs-font); font-size: 13px; cursor: pointer;
+      text-align: left;
+    }
+    .overflow-item:hover, .overflow-item:focus {
+      background: var(--rs-bg-hover);
+    }
+    .overflow-item:focus-visible {
+      outline: 2px solid var(--rs-accent); outline-offset: -2px;
+    }
+
+
 
     /* Tooltip for timeline preview */
     .tooltip {
@@ -1441,7 +1564,14 @@
       '</div>' +
       '<button data-act="pip" title="Picture-in-picture" aria-label="Toggle picture-in-picture">' + SVG.pip + '</button>' +
       '<button data-act="mini" title="Minimize" aria-label="Minimize controller">' + SVG.minimize + '</button>' +
-      '<button class="help-btn" data-act="help" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">' + SVG.help + '</button>';
+      '<button class="help-btn" data-act="help" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">' + SVG.help + '</button>' +
+      '<button data-act="overflow" title="More options" aria-label="More options" class="overflow-btn">...</button>' +
+      '<div class="overflow-menu hidden" role="menu" aria-label="More options">' +
+        '<div class="overflow-item" data-act="overflow-speed" aria-label="Playback speed">Speed</div>' +
+        '<div class="overflow-item" data-act="overflow-reverse" aria-label="Reverse playback">Reverse</div>' +
+        '<div class="overflow-item" data-act="overflow-pip" aria-label="Picture-in-picture">Picture-in-Picture</div>' +
+        '<div class="overflow-item" data-act="overflow-mini" aria-label="Minimize controller">Minimize</div>' +
+      '</div>';
     const chip = document.createElement('div');
     chip.className = 'chip hidden';
     chip.innerHTML = SVG.play + '<span></span>';
@@ -1522,7 +1652,9 @@
       dl: pill.querySelector('[data-act="dl"]'),
       help: pill.querySelector('[data-act="help"]'),
       shortcutsOverlay: shortcutsOverlay,
-      shortcutsClose: shortcutsOverlay.querySelector('.shortcuts-close')
+      shortcutsClose: shortcutsOverlay.querySelector('.shortcuts-close'),
+      overflowBtn: pill.querySelector('[data-act="overflow"]'),
+      overflowMenu: pill.querySelector('.overflow-menu')
     };
 
     pill.querySelector('[data-act="back"]').addEventListener('click', () => nudgeSecs(-5));
@@ -1537,14 +1669,90 @@
     els.help.addEventListener('click', toggleShortcutsOverlay);
     els.shortcutsClose.addEventListener('click', closeShortcutsOverlay);
     pill.querySelector('[data-act="mini"]').addEventListener('click', () => {
+      settings.controllerMini = true;
+      chrome.storage.sync.set({ controllerMini: true });
+      applyVisibility();
+    });
+    chip.addEventListener('click', () => {
+      settings.controllerMini = false;
+      chrome.storage.sync.set({ controllerMini: false });
+      applyVisibility();
+    });
+    els.overflow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      els.overflowMenu.classList.toggle('hidden');
+      els.overflowMenu.classList.toggle('open');
+    });
+    els.overflowMenu.querySelectorAll('.overflow-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const act = item.dataset.act;
+        if (act === 'overflow-speed') {
+          els.overflowMenu.classList.remove('open');
+          els.overflowMenu.classList.add('hidden');
+          toggleSpeedPopover();
+        } else if (act === 'overflow-reverse') {
+          els.overflowMenu.classList.remove('open');
+          els.overflowMenu.classList.add('hidden');
+          cycleReverse();
+        } else if (act === 'overflow-pip') {
+          els.overflowMenu.classList.remove('open');
+          els.overflowMenu.classList.add('hidden');
+          togglePip();
+        } else if (act === 'overflow-mini') {
+          els.overflowMenu.classList.remove('open');
+          els.overflowMenu.classList.add('hidden');
+          settings.controllerMini = true;
+          chrome.storage.sync.set({ controllerMini: true });
+          applyVisibility();
+        }
+      });
+    });
+    // Close overflow menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!els.overflowMenu.contains(e.target) && e.target !== els.overflow) {
+        els.overflowMenu.classList.remove('open');
+        els.overflowMenu.classList.add('hidden');
+      }
+    });
+
+    // Overflow button toggle
+    els.overflowBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      els.overflowMenu.classList.toggle('hidden');
+      els.overflowMenu.classList.toggle('open');
+    });
+
+    // Overflow item handlers
+    els.overflowMenu.querySelector('[data-act="overflow-speed"]').addEventListener('click', () => {
+      els.overflowMenu.classList.add('hidden');
+      els.overflowMenu.classList.remove('open');
+      toggleSpeedPopover(new Event('click'));
+    });
+    els.overflowMenu.querySelector('[data-act="overflow-reverse"]').addEventListener('click', () => {
+      els.overflowMenu.classList.add('hidden');
+      els.overflowMenu.classList.remove('open');
+      cycleReverse();
+    });
+    els.overflowMenu.querySelector('[data-act="overflow-pip"]').addEventListener('click', () => {
+      els.overflowMenu.classList.add('hidden');
+      els.overflowMenu.classList.remove('open');
+      togglePip();
+    });
+    els.overflowMenu.querySelector('[data-act="overflow-mini"]').addEventListener('click', () => {
+      els.overflowMenu.classList.add('hidden');
+      els.overflowMenu.classList.remove('open');
       chrome.storage.sync.set({ controllerMini: true });
       settings.controllerMini = true;
       applyVisibility();
     });
-    chip.addEventListener('click', () => {
-      chrome.storage.sync.set({ controllerMini: false });
-      settings.controllerMini = false;
-      applyVisibility();
+
+    // Close overflow when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!els.overflowMenu.contains(e.target) && e.target !== els.overflowBtn) {
+        els.overflowMenu.classList.add('hidden');
+        els.overflowMenu.classList.remove('open');
+      }
     });
 
     // Keyboard navigation for timeline
@@ -1660,6 +1868,75 @@
       seeking = false;
       els.track.classList.remove('dragging');
     };
+    // Touch gesture handlers for timeline
+    let touchStartX = 0;
+    let touchStartTime = 0;
+
+    els.rail.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartTime = Date.now();
+    });
+
+    els.rail.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - touchStartX;
+      const railRect = els.rail.getBoundingClientRect();
+      const width = railRect.width;
+      const dxFrac = dx / width;
+      const step = dxFrac * 10; // 10 seconds per full rail width
+      const targetTime = video.currentTime + step;
+      video.currentTime = Math.max(0, Math.min(video.duration, targetTime));
+      paint();
+      touchStartX = e.touches[0].clientX;
+    });
+
+    els.rail.addEventListener('touchend', () => {
+      touchStartX = 0;
+    });
+
+    // Pinch-to-zoom scrub: two-finger pinch changes seek sensitivity
+    let pinchStartDist = 0;
+    let pinchStartTime = video.currentTime;
+    els.rail.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                             e.touches[0].clientY - e.touches[1].clientY);
+        pinchStartDist = d;
+        pinchStartTime = video.currentTime;
+      }
+    }, { passive: false });
+
+    els.rail.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                             e.touches[0].clientY - e.touches[1].clientY);
+        const diff = d - pinchStartDist;
+        const step = diff / 20; // sensitivity
+        const targetTime = pinchStartTime + step;
+        video.currentTime = Math.max(0, Math.min(video.duration, targetTime));
+        paint();
+      }
+    }, { passive: false });
+
+    // Long-press speed button → open popover
+    let longPressTimer = null;
+    els.speed.addEventListener('pointerdown', () => {
+      longPressTimer = setTimeout(() => {
+        els.speedPopover.classList.remove('hidden');
+        els.speedPopover.classList.add('open');
+        longPressTimer = null;
+      }, 600);
+    });
+    els.speed.addEventListener('pointerup', () => {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    });
+    els.speed.addEventListener('pointerleave', () => {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    });
+
     els.rail.addEventListener('pointerdown', startScrub);
     els.rail.addEventListener('pointermove', moveScrub);
     els.rail.addEventListener('pointerup', endScrub);
