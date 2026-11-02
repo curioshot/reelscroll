@@ -3,6 +3,7 @@ const DEFAULTS = {
   enabled: true,
   controllerEnabled: true,
   autoAdvance: true,
+  controllerTheme: 'auto', // 'auto' | 'light' | 'dark'
   nextKey: 'KeyS',
   prevKey: 'KeyW',
   nextLabel: 'S',
@@ -23,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const enabledEl = document.getElementById('enabled');
   const controllerEl = document.getElementById('controllerEnabled');
   const advanceEl = document.getElementById('autoAdvance');
+  const themeEl = document.getElementById('controllerTheme');
   const bindingsEl = document.getElementById('bindings');
 
   const stored = await chrome.storage.sync.get(null);
@@ -30,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   enabledEl.checked = s.enabled;
   controllerEl.checked = s.controllerEnabled;
   advanceEl.checked = s.autoAdvance;
+  themeEl.value = s.controllerTheme || 'auto';
   bindingsEl.innerHTML =
     `Up: <kbd>${escapeHtml(s.prevLabel)}</kbd> &nbsp; Down: <kbd>${escapeHtml(s.nextLabel)}</kbd>`;
 
@@ -41,6 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   advanceEl.addEventListener('change', async () => {
     await chrome.storage.sync.set({ autoAdvance: advanceEl.checked });
+  });
+  themeEl.addEventListener('change', async () => {
+    await chrome.storage.sync.set({ controllerTheme: themeEl.value });
   });
 
   document.getElementById('openOptions').addEventListener('click', async () => {

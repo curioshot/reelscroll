@@ -35,12 +35,20 @@
     <span>Next when video ends</span>
     <label class="switch"><input type="checkbox" id="autoAdvance"><span class="track"></span></label>
   </div>
+  <div class="row">
+    <span>Controller theme</span>
+    <select id="controllerTheme" style="flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid #d1d1d6; background: #fff; font-size: 13px;">
+      <option value="auto">Auto (system)</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </div>
   <div class="keys" id="bindings">Up: <kbd>W</kbd> &nbsp; Down: <kbd>S</kbd></div>
   <div class="btns">
     <button id="openOptions" class="primary">Set keys</button>
     <button id="openShortcuts">Media keys</button>
   </div>
-  <div class="hint">⏭ ⏮ hardware keys work via Chrome shortcuts. If they don't respond, open “Media keys” → find this extension → set Global.</div>
+  <div class="hint">⏭ ⏮ hardware keys work via Chrome shortcuts. If they don't respond, open "Media keys" → find this extension → set Global.</div>
   <script src="popup.js"></script>
 </body>
 </html>

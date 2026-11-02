@@ -4,14 +4,15 @@
   'use strict';
 
   const HOST_ID = 'reelscroll-controller-host';
-  const SPEEDS = [0.5, 1, 1.5, 2, 3];
+  const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3];
   const DEFAULTS = {
     enabled: true,
     controllerEnabled: true,
     autoAdvance: true,
     playbackRate: 1,
     controllerMini: false,
-    controllerPos: null
+    controllerPos: null,
+    controllerAnchor: 'bottom-center' // 'tl'|'t'|'tr'|'l'|'c'|'r'|'bl'|'b'|'br'|'free'
   };
 
   let settings = { ...DEFAULTS };
@@ -31,49 +32,414 @@
   let lastTime = 0; // last seen currentTime, for loop-wrap detection
   let lastSrc = ''; // bound video src, for same-element reuse detection
   let lastSeekAt = 0; // our own seeks never count as loop wraps
-  let origLoop = false;
-  let wantPip = false; // user wants the float open; follows reels while it can
-  let pipFollow = false; // transitional: ignore the leave event of a migration
   let pipGen = 0; // generation counter: overlapping followPip() calls don't clear each other
   let bindMarkAt = 0; // performance.now() of the last video bind/src swap: download entries must postdate it
 
+  // Anchor system
+  const ANCHORS = {
+    'tl': { left: 'env(safe-area-inset-left, 16px)', top: 'env(safe-area-inset-top, 16px)', transform: 'none' },
+    't':  { left: '50%', top: 'env(safe-area-inset-top, 16px)', transform: 'translateX(-50%)' },
+    'tr': { right: 'env(safe-area-inset-right, 16px)', top: 'env(safe-area-inset-top, 16px)', transform: 'none' },
+    'l':  { left: 'env(safe-area-inset-left, 16px)', top: '50%', transform: 'translateY(-50%)' },
+    'c':  { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' },
+    'r':  { right: 'env(safe-area-inset-right, 16px)', top: '50%', transform: 'translateY(-50%)' },
+    'bl': { left: 'env(safe-area-inset-left, 16px)', bottom: 'env(safe-area-inset-bottom, 92px)', transform: 'none' },
+    'b':  { left: '50%', bottom: 'env(safe-area-inset-bottom, 92px)', transform: 'translateX(-50%)' },
+    'br': { right: 'env(safe-area-inset-right, 16px)', bottom: 'env(safe-area-inset-bottom, 92px)', transform: 'none' },
+    'bottom-center': { left: '50%', bottom: 'env(safe-area-inset-bottom, 92px)', transform: 'translateX(-50%)' }
+  };
+
+  // Popover state
+  let speedPopoverGen = 0;
+  let speedPopoverCleanup = null;
+
   const SVG = {
-    back: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="2" y="3" width="2" height="10" fill="currentColor"/><path d="M13 3v10L5.5 8 13 3z" fill="currentColor"/></svg>',
-    fwd: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="12" y="3" width="2" height="10" fill="currentColor"/><path d="M3 3v10l7.5-5L3 3z" fill="currentColor"/></svg>',
-    play: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5v11l8.5-5.5L4 2.5z" fill="currentColor"/></svg>',
-    pause: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3.5" y="2.5" width="3.4" height="11" fill="currentColor"/><rect x="9.1" y="2.5" width="3.4" height="11" fill="currentColor"/></svg>',
-    rev: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M12 3v10L4.5 8 12 3z" fill="currentColor"/></svg>',
-    dl: '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 2.5v7M5 7l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
-    pip: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="3" width="13" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7.5" width="4.5" height="3.4" rx="0.8" fill="currentColor"/></svg>'
+    // All icons: 16x16, 2px stroke, currentColor, stroke-linecap/join round
+    back: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11 4l-5 4 5 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    fwd: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 4l5 4-5 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    play: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 3.5v9l7-4.5L5 3.5z" fill="currentColor"/></svg>',
+    pause: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="4" y="3" width="3" height="10" fill="currentColor"/><rect x="9" y="3" width="3" height="10" fill="currentColor"/></svg>',
+    rev: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11 12.5v-9l-5 4.5L11 12.5z" fill="currentColor"/></svg>',
+    dl: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 3.5v8M5 8.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12.5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    pip: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2" y="4" width="12" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="8.5" width="5" height="3.5" rx="0.8" fill="currentColor"/></svg>',
+    speed: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 11h10M3 11l2-4 2 4 2-4 2 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    minimize: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    help: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 5v3M8 10v.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
   };
 
   const CSS = `
-    :host { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 2147483647; }
-    .pill, .chip { position: fixed; font: 500 12px/1 system-ui, sans-serif; color: #fff;
-      background: rgba(10,10,12,.82); border: 1px solid rgba(255,255,255,.14);
-      border-radius: 999px; backdrop-filter: blur(6px); user-select: none; }
-    .pill { left: 50%; bottom: 92px; transform: translateX(-50%);
-      display: flex; align-items: center; gap: 4px; padding: 6px 10px; cursor: grab; }
-    .pill.dragging { cursor: grabbing; }
-    .chip { left: 50%; bottom: 92px; transform: translateX(-50%);
-      display: flex; align-items: center; gap: 6px; padding: 7px 12px; cursor: pointer; }
+    /* ===== Design Tokens ===== */
+    :host {
+      /* Colors (Dark theme default) */
+      --rs-bg: rgba(10,10,12,0.88);
+      --rs-bg-hover: rgba(10,10,12,0.95);
+      --rs-border: rgba(255,255,255,0.18);
+      --rs-border-focus: var(--rs-accent);
+      --rs-accent: #bc2a8d;
+      --rs-accent-hover: #d633a0;
+      --rs-text: #fff;
+      --rs-text-dim: rgba(255,255,255,0.7);
+      --rs-fill: var(--rs-accent);
+      --rs-rail: rgba(255,255,255,0.25);
+      --rs-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+      /* Geometry */
+      --rs-radius: 14px;
+      --rs-btn-size: 32px;
+      --rs-gap: 8px;
+      --rs-pad-x: 14px;
+      --rs-pad-y: 8px;
+      --rs-timeline-w: clamp(160px, 30vw, 280px);
+      --rs-thumb-size: 14px;
+      --rs-font: 500 13px/1.2 system-ui, -apple-system, sans-serif;
+      /* Motion */
+      --rs-transition: 120ms cubic-bezier(0.2, 0, 0, 1);
+      /* Z-index */
+      --rs-z: 2147483647;
+    }
+
+    /* Light theme (auto via prefers-color-scheme) */
+    @media (prefers-color-scheme: light) {
+      :host {
+        --rs-bg: rgba(250,250,252,0.92);
+        --rs-bg-hover: rgba(255,255,255,0.98);
+        --rs-border: rgba(0,0,0,0.12);
+        --rs-text: #1c1c1e;
+        --rs-text-dim: rgba(0,0,0,0.5);
+        --rs-rail: rgba(0,0,0,0.18);
+        --rs-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+      }
+    }
+
+    /* Explicit light theme (via data-theme="light") */
+    :host([data-theme="light"]) {
+      --rs-bg: rgba(250,250,252,0.92);
+      --rs-bg-hover: rgba(255,255,255,0.98);
+      --rs-border: rgba(0,0,0,0.12);
+      --rs-text: #1c1c1e;
+      --rs-text-dim: rgba(0,0,0,0.5);
+      --rs-rail: rgba(0,0,0,0.18);
+      --rs-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+    }
+
+    /* Explicit dark theme (via data-theme="dark") */
+    :host([data-theme="dark"]) {
+      --rs-bg: rgba(10,10,12,0.88);
+      --rs-bg-hover: rgba(10,10,12,0.95);
+      --rs-border: rgba(255,255,255,0.18);
+      --rs-text: #fff;
+      --rs-text-dim: rgba(255,255,255,0.7);
+      --rs-rail: rgba(255,255,255,0.25);
+      --rs-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      :host { --rs-transition: 0ms; }
+    }
+
+    /* ===== Base ===== */
+    :host { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: var(--rs-z); }
+
+    .pill, .chip {
+      position: fixed;
+      font: var(--rs-font);
+      color: var(--rs-text);
+      background: var(--rs-bg);
+      border: 1px solid var(--rs-border);
+      border-radius: var(--rs-radius);
+      backdrop-filter: blur(8px);
+      box-shadow: var(--rs-shadow);
+      user-select: none;
+      transition: background var(--rs-transition), border-color var(--rs-transition), box-shadow var(--rs-transition);
+    }
+
+    .pill:hover, .chip:hover {
+      background: var(--rs-bg-hover);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    .pill {
+      left: 50%; bottom: 92px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: var(--rs-gap);
+      padding: var(--rs-pad-y) var(--rs-pad-x); cursor: grab;
+    }
+
+    .pill.dragging { cursor: grabbing; transition: none; }
+
+    .chip {
+      left: 50%; bottom: 92px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: calc(var(--rs-gap) - 2px);
+      padding: calc(var(--rs-pad-y) - 1px) calc(var(--rs-pad-x) + 2px); cursor: pointer;
+    }
+
     .hidden { display: none !important; }
-    button { all: unset; display: flex; align-items: center; justify-content: center;
-      min-width: 26px; height: 26px; border-radius: 999px; cursor: pointer; color: #fff;
-      padding: 0 5px; box-sizing: border-box; }
-    button:hover { background: rgba(255,255,255,.16); }
-    button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-    button.on { background: #bc2a8d; }
-    .speed { font-variant-numeric: tabular-nums; min-width: 38px; }
-    .time { font-variant-numeric: tabular-nums; color: rgba(255,255,255,.85);
-      white-space: nowrap; padding: 0 2px; }
-    .track { position: relative; width: 130px; height: 16px; display: flex;
-      align-items: center; cursor: pointer; }
-    .rail { position: relative; width: 100%; height: 4px; border-radius: 999px;
-      background: rgba(255,255,255,.28); overflow: hidden; }
-    .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
-      background: #fff; border-radius: 999px; }
-    .track.disabled { opacity: .35; pointer-events: none; }
+
+    button {
+      all: unset;
+      display: flex; align-items: center; justify-content: center;
+      width: var(--rs-btn-size); height: var(--rs-btn-size);
+      border-radius: 999px; cursor: pointer; color: var(--rs-text);
+      box-sizing: border-box;
+      transition: background var(--rs-transition), color var(--rs-transition), transform var(--rs-transition);
+    }
+
+    button:not(:disabled):hover {
+      background: var(--rs-bg-hover);
+      transform: scale(1.04);
+    }
+
+    button:not(:disabled):active {
+      transform: scale(0.96);
+      transition-duration: 40ms;
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--rs-accent);
+      outline-offset: 2px;
+    }
+
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    button.on { background: var(--rs-accent); color: var(--rs-text); }
+    button.on:hover { background: var(--rs-accent-hover); }
+
+    .speed { font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
+
+    .time { font-variant-numeric: tabular-nums; color: var(--rs-text-dim);
+      white-space: nowrap; padding: 0 4px; }
+
+    .track {
+      position: relative; width: var(--rs-timeline-w); height: 24px;
+      display: flex; align-items: center; cursor: pointer;
+    }
+
+    .rail {
+      position: relative; width: 100%; height: 4px; border-radius: 999px;
+      background: var(--rs-rail); overflow: visible;
+    }
+
+    .buffer {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+      background: rgba(255,255,255,0.15); border-radius: 999px;
+      pointer-events: none;
+    }
+
+    .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+      background: var(--rs-fill); border-radius: 999px;
+      transition: width 0.1s linear;
+    }
+
+    .thumb {
+      position: absolute; top: 50%; transform: translate(-50%, -50%);
+      width: var(--rs-thumb-size); height: var(--rs-thumb-size);
+      background: var(--rs-fill); border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      opacity: 0; pointer-events: none;
+      transition: opacity var(--rs-transition), transform var(--rs-transition);
+    }
+
+    .track:hover .thumb, .track:focus-within .thumb {
+      opacity: 1;
+    }
+
+    .track.dragging .thumb {
+      opacity: 1; transform: translate(-50%, -50%) scale(1.3);
+    }
+
+    .track.disabled { opacity: 0.35; pointer-events: none; }
+
+    /* Tooltip for timeline preview */
+    .tooltip {
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      margin-bottom: 6px; padding: 4px 8px; border-radius: 6px;
+      background: rgba(0,0,0,0.85); color: #fff; font-size: 11px;
+      white-space: nowrap; pointer-events: none; opacity: 0;
+      transition: opacity var(--rs-transition);
+      z-index: 10;
+    }
+
+    .track:hover .tooltip { opacity: 1; }
+
+    /* Download progress ring */
+    .dl-progress {
+      position: absolute; inset: 0; border-radius: 50%;
+      transform: rotate(-90deg); pointer-events: none;
+    }
+
+    .dl-progress circle {
+      fill: none; stroke: var(--rs-accent); stroke-width: 2.5;
+      stroke-linecap: round; stroke-dasharray: 88; stroke-dashoffset: 88;
+      transition: stroke-dashoffset 0.2s linear;
+      r: 14; cx: 16; cy: 16;
+    }
+
+    /* Downloading state on download button */
+    button.downloading {
+      position: relative;
+    }
+
+    button.downloading .dl-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      transform: rotate(-90deg); pointer-events: none;
+    }
+
+    button.downloading .dl-ring circle {
+      fill: none; stroke: var(--rs-accent); stroke-width: 2.5;
+      stroke-linecap: round; stroke-dasharray: 88;
+      transition: stroke-dashoffset 0.2s linear;
+      r: 14; cx: 16; cy: 16;
+    }
+
+    /* Popover base */
+    .popover {
+      position: absolute; z-index: 20;
+      background: var(--rs-bg); border: 1px solid var(--rs-border);
+      border-radius: 10px; padding: 6px;
+      box-shadow: var(--rs-shadow);
+      backdrop-filter: blur(8px);
+      min-width: 160px;
+      animation: rs-pop-in var(--rs-transition) ease-out;
+    }
+
+    @keyframes rs-pop-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .popover::before {
+      content: '';
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-bottom-color: var(--rs-border);
+    }
+
+    .popover-header {
+      font-size: 11px; font-weight: 600; color: var(--rs-text-dim);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 4px 8px 2px; margin: -6px -6px 4px;
+    }
+
+    .popover-list { list-style: none; margin: 0; padding: 0; }
+
+    .popover-item {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 8px 12px; border-radius: 6px;
+      background: transparent; border: none; color: var(--rs-text);
+      font: var(--rs-font); font-size: 13px; cursor: pointer;
+      text-align: left; gap: 8px;
+    }
+
+    .popover-item:hover, .popover-item:focus {
+      background: var(--rs-bg-hover);
+    }
+
+    .popover-item:focus-visible {
+      outline: 2px solid var(--rs-accent); outline-offset: -2px;
+    }
+
+    .popover-item.active { color: var(--rs-accent); font-weight: 600; }
+
+    .popover-item .check { display: none; }
+    .popover-item.active .check { display: inline; color: var(--rs-accent); }
+
+    .popover-item kbd {
+      font-size: 11px; padding: 1px 5px; border-radius: 4px;
+      background: var(--rs-rail); color: var(--rs-text-dim);
+      font-family: inherit; margin-left: 8px;
+    }
+
+    /* Segmented control (for reverse) */
+    .segmented {
+      display: inline-flex; background: var(--rs-rail);
+      border-radius: 999px; padding: 2px; gap: 2px;
+    }
+
+    .segmented-btn {
+      all: unset; padding: 6px 14px; border-radius: 999px;
+      font: var(--rs-font); font-size: 12px; color: var(--rs-text-dim);
+      cursor: pointer; transition: all var(--rs-transition);
+      white-space: nowrap;
+    }
+
+    .segmented-btn:hover { color: var(--rs-text); background: rgba(255,255,255,0.1); }
+
+    .segmented-btn.active {
+      background: var(--rs-accent); color: var(--rs-text);
+      box-shadow: 0 2px 8px rgba(188,42,141,0.3);
+    }
+
+    .segmented-btn:focus-visible {
+      outline: 2px solid var(--rs-accent); outline-offset: 2px;
+    }
+
+    /* Shortcuts overlay */
+    .shortcuts-overlay {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+      animation: rs-fade-in var(--rs-transition) ease-out;
+    }
+
+    .shortcuts-panel {
+      background: var(--rs-bg); border: 1px solid var(--rs-border);
+      border-radius: 14px; padding: 24px; width: 90%; max-width: 360px;
+      box-shadow: var(--rs-shadow); backdrop-filter: blur(8px);
+      animation: rs-pop-in var(--rs-transition) ease-out;
+    }
+
+    .shortcuts-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--rs-border);
+    }
+
+    .shortcuts-title {
+      font: 600 16px/1 var(--rs-font); color: var(--rs-text);
+    }
+
+    .shortcuts-close {
+      all: unset; width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--rs-text-dim); cursor: pointer;
+      transition: all var(--rs-transition);
+    }
+
+    .shortcuts-close:hover { background: var(--rs-bg-hover); color: var(--rs-text); }
+
+    .shortcuts-grid {
+      display: grid; grid-template-columns: auto 1fr; gap: 10px 16px;
+    }
+
+    .shortcut-key {
+      font: 500 12px/1 var(--rs-font); color: var(--rs-text);
+      background: var(--rs-rail); padding: 4px 8px; border-radius: 6px;
+      text-align: right; min-width: 80px;
+    }
+
+    .shortcut-desc {
+      font: 400 13px/1 var(--rs-font); color: var(--rs-text-dim);
+    }
+
+    @keyframes rs-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Help button */
+    .help-btn {
+      width: var(--rs-btn-size); height: var(--rs-btn-size);
+      border-radius: 999px; cursor: pointer; color: var(--rs-text);
+      display: flex; align-items: center; justify-content: center;
+      transition: all var(--rs-transition);
+    }
+
+    .help-btn:hover { background: var(--rs-bg-hover); transform: scale(1.04); }
+    .help-btn:focus-visible { outline: 2px solid var(--rs-accent); outline-offset: 2px; }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      :host { --rs-transition: 0ms; }
+    }
   `;
 
   async function loadSettings() {
@@ -92,6 +458,8 @@
     }
     applyVisibility();
     if (video && changes.playbackRate) applyRate(video);
+    // Theme change: apply immediately
+    if (changes.controllerTheme) applyTheme(changes.controllerTheme.newValue);
     // Toggling auto-advance at runtime takes effect on the live reel:
     // on restores the loop-off behavior, off gives the loop back.
     if (video && changes.autoAdvance) {
@@ -511,17 +879,56 @@
 
   // The service worker hands the URL to Chrome's downloader, so no CORS and
   // no extra host permissions are involved.
-  function flashDl(good, note) {
+  function flashDl(good, note, progress) {
     if (!els.dl) return;
-    els.dl.classList.toggle('on', !!good);
-    if (note) els.dl.title = note;
-    clearTimeout(flashDl._t);
-    flashDl._t = setTimeout(() => {
-      if (els.dl) {
-        els.dl.classList.remove('on');
-        els.dl.title = 'Download video';
+    // Handle progress ring (0-100)
+    if (typeof progress === 'number' && progress >= 0 && progress <= 100) {
+      const circumference = 2 * Math.PI * 14; // r=14
+      const offset = circumference * (1 - progress / 100);
+      els.dl.style.setProperty('--dl-progress', offset);
+      els.dl.classList.add('downloading');
+    } else {
+      els.dl.classList.remove('downloading');
+      els.dl.style.removeProperty('--dl-progress');
+    }
+    if (typeof progress !== 'number') {
+      els.dl.classList.toggle('on', !!good);
+      if (note) {
+        els.dl.title = note;
+        showToast(note, good);
       }
-    }, 1500);
+      clearTimeout(flashDl._t);
+      flashDl._t = setTimeout(() => {
+        if (els.dl) {
+          els.dl.classList.remove('on');
+          els.dl.title = 'Download video';
+        }
+      }, 1500);
+    }
+  }
+
+  // Centralized toast system for download feedback
+  function showToast(message, isSuccess = true) {
+    let toast = document.getElementById('reelscroll-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'reelscroll-toast';
+      toast.style.cssText = `
+        position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+        padding: 10px 16px; border-radius: 8px;
+        background: rgba(10,10,12,0.95); border: 1px solid rgba(255,255,255,0.18);
+        backdrop-filter: blur(8px); color: #fff; font: 500 13px/1 system-ui;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+        z-index: 2147483647; opacity: 0; transition: opacity 120ms ease-out;
+        pointer-events: none; max-width: 90vw; text-align: center;
+      `;
+      document.documentElement.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.borderColor = isSuccess ? '#bc2a8d' : '#ff2d55';
+    toast.style.opacity = '1';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
   }
 
   async function downloadVideo() {
@@ -531,16 +938,40 @@
       flashDl(false, 'Not downloadable');
       return;
     }
-    // For picked-from-network URLs, fetch in the page first, WITH the Range
-    // header: `bytes=0-` gets the full file as 206/200 either way. The blob
-    // is only saved when it really is an MP4 from byte 0 (ftyp box) and big
-    // enough to be media — an audio lane, a fragment, or an HTML error page
-    // can never land in Downloads. If the header trips CORS, retry plain;
-    // if that fails too, the worker route runs as before.
+
+    const filename = fileNameFor(pick.url);
+
+    // Classify error for actionable feedback
+    const classifyError = (err, res) => {
+      if (err instanceof TypeError && err.message.includes('Failed to fetch')) return { type: 'network', msg: 'Network error — check connection' };
+      if (res && res.status === 0) return { type: 'network', msg: 'Network error — offline or blocked' };
+      if (res && res.status === 403) return { type: 'cors', msg: 'Blocked by CORS — try again' };
+      if (res && res.status === 404) return { type: 'notfound', msg: 'Video not found on server' };
+      if (res && res.status >= 500) return { type: 'server', msg: 'Server error — try again later' };
+      return { type: 'unknown', msg: err?.message || 'Download failed' };
+    };
+
+    // Format bytes/speed for ETA display
+    const formatSpeed = (bytesPerSec) => {
+      if (bytesPerSec >= 1024 * 1024) return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+      if (bytesPerSec >= 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+      return bytesPerSec + ' B/s';
+    };
+
+    // Format ETA
+    const formatETA = (seconds) => {
+      if (!isFinite(seconds) || seconds < 0) return '—';
+      if (seconds < 60) return Math.ceil(seconds) + 's';
+      const m = Math.floor(seconds / 60);
+      const s = Math.ceil(seconds % 60);
+      return m + 'm ' + s + 's';
+    };
+
     const looksLikeMp4 = async (blob) => {
       const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
       return head.length === 8 && String.fromCharCode(...head.slice(4)) === 'ftyp';
     };
+
     if (!pick.whole) {
       const attempts = [
         () => fetch(pick.url, { headers: { Range: 'bytes=0-' } }),
@@ -548,34 +979,105 @@
       ];
       for (const attempt of attempts) {
         try {
+          const startTime = performance.now();
           const res = await attempt();
-          const type = res.headers.get('content-type') || '';
-          const blob = res.ok ? await res.blob() : null;
-          if (blob && blob.size > 60000 &&
-              (type.includes('video/') || type.includes('octet-stream')) &&
-              (await looksLikeMp4(blob))) {
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = fileNameFor(pick.url);
-            document.documentElement.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-            flashDl(true, 'Saved ✓');
-            return;
+
+          // Progress tracking for large files
+          const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
+          let blob;
+          if (contentLength > 0 && res.body) {
+            // Stream with progress
+            const reader = res.body.getReader();
+            const chunks = [];
+            let received = 0;
+            let lastUpdate = 0;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              received += value.length;
+              const now = performance.now();
+              if (now - lastUpdate > 200) { // Throttle updates
+                const elapsed = (now - startTime) / 1000;
+                const speed = elapsed > 0 ? received / elapsed : 0;
+                const eta = contentLength > received && speed > 0 ? (contentLength - received) / speed : 0;
+                const pct = Math.min(100, (received / contentLength) * 100);
+                flashDl(false, '', pct);
+                // Update title with speed/ETA
+                els.dl.title = `Downloading… ${formatSpeed(speed)} • ETA: ${formatETA(eta)}`;
+                lastUpdate = now;
+              }
+            }
+            blob = new Blob(chunks, { type: res.headers.get('content-type') || 'video/mp4' });
+          } else {
+            blob = res.ok ? await res.blob() : null;
           }
+
+          const type = res.headers.get('content-type') || '';
+          if (!res.ok || !blob) {
+            const errInfo = classifyError(new Error('HTTP ' + res.status), res);
+            throw Object.assign(new Error(errInfo.msg), { type: errInfo.type });
+          }
+
+          if (blob.size <= 60000 ||
+              !(type.includes('video/') || type.includes('octet-stream')) ||
+              !(await looksLikeMp4(blob))) {
+            throw Object.assign(new Error('Invalid video file'), { type: 'validation' });
+          }
+
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          document.documentElement.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+          flashDl(true, `Saved: ${filename}`);
+          return;
+
         } catch (err) {
-          // CORS on the Range header or a dead network: try the next path.
+          // Classify and re-throw for outer handler
+          const errInfo = classifyError(err, err.response);
+          throw Object.assign(err, { type: errInfo.type, userMsg: errInfo.msg });
         }
       }
     }
+
+    // Worker fallback
     try {
+      const startTime = performance.now();
+      let progressInterval;
+
+      // Simulate progress for worker route (unknown size)
+      const animateProgress = () => {
+        let p = 10;
+        progressInterval = setInterval(() => {
+          p = Math.min(90, p + Math.random() * 5);
+          flashDl(false, '', p);
+        }, 300);
+      };
+
+      animateProgress();
+
       chrome.runtime.sendMessage({ type: 'REELS_DOWNLOAD', url: pick.url }, (res) => {
-        if (chrome.runtime.lastError) return; // worker asleep: it saves silently
-        flashDl(!!(res && res.ok), res && res.ok ? 'Saved ✓' : 'Download failed');
+        clearInterval(progressInterval);
+        flashDl(false, '', 100); // Complete the ring
+        setTimeout(() => flashDl(false, ''), 500); // Clear progress
+
+        if (chrome.runtime.lastError) {
+          flashDl(false, 'Download failed — extension busy');
+          return;
+        }
+        if (res && res.ok) {
+          flashDl(true, `Saved: ${filename}`);
+        } else {
+          const errInfo = classifyError(new Error('Worker download failed'), null);
+          flashDl(false, errInfo.msg);
+        }
       });
     } catch (err) {
-      flashDl(false, 'Download failed');
+      const errInfo = classifyError(err, null);
+      flashDl(false, errInfo.msg);
     }
   }
 
@@ -653,14 +1155,111 @@
     paint();
   }
 
-  function cycleSpeed() {
-    const i = SPEEDS.indexOf(settings.playbackRate);
-    const next = SPEEDS[(i + 1 + SPEEDS.length) % SPEEDS.length];
-    chrome.storage.sync.set({ playbackRate: next });
-    settings.playbackRate = next;
+  function setPlaybackRate(rate) {
+    chrome.storage.sync.set({ playbackRate: rate });
+    settings.playbackRate = rate;
     stopReverse();
     if (video && !video.paused) applyRate(video);
+    buildSpeedPopover(); // refresh active state
     paint();
+  }
+
+  function buildSpeedPopover() {
+    if (!els.speedList) return;
+    els.speedList.innerHTML = SPEEDS.map(s => `
+      <li class="popover-item${s === settings.playbackRate ? ' active' : ''}"
+          role="option"
+          data-speed="${s}"
+          tabindex="-1">
+        ${s}x
+      </li>
+    `).join('');
+    // Attach click listeners
+    els.speedList.querySelectorAll('.popover-item').forEach(item => {
+      item.addEventListener('click', () => {
+        setPlaybackRate(parseFloat(item.dataset.speed));
+        closeSpeedPopover();
+      });
+    });
+  }
+
+  function toggleSpeedPopover(e) {
+    e.stopPropagation();
+    const myGen = ++speedPopoverGen;
+    const isOpen = !els.speedPopover.classList.contains('hidden');
+    closeAllPopovers();
+    if (isOpen) return;
+    buildSpeedPopover();
+    els.speedPopover.classList.remove('hidden');
+    els.speed.setAttribute('aria-expanded', 'true');
+    // Focus first item
+    const active = els.speedList.querySelector('.popover-item.active');
+    if (active) active.focus();
+    // Close on outside click
+    const closeOnClick = (ev) => {
+      if (!els.speedPopover.contains(ev.target) && ev.target !== els.speed) {
+        closeSpeedPopover();
+        document.removeEventListener('click', closeOnClick);
+      }
+    };
+    document.addEventListener('click', closeOnClick);
+    // Keyboard navigation
+    const keyHandler = (ev) => {
+      const items = [...els.speedList.querySelectorAll('.popover-item')];
+      const idx = items.findIndex(i => i === document.activeElement);
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        items[(idx + 1) % items.length].focus();
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        items[(idx - 1 + items.length) % items.length].focus();
+      } else if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        if (document.activeElement.classList.contains('popover-item')) {
+          document.activeElement.click();
+        }
+      } else if (ev.key === 'Escape') {
+        closeSpeedPopover();
+      }
+    };
+    els.speedPopover.addEventListener('keydown', keyHandler);
+    const cleanup = () => {
+      els.speedPopover.removeEventListener('keydown', keyHandler);
+      document.removeEventListener('click', closeOnClick);
+    };
+    // Store cleanup for gen tracking
+    speedPopoverCleanup = cleanup;
+  }
+
+  function closeSpeedPopover() {
+    if (speedPopoverCleanup) speedPopoverCleanup();
+    speedPopoverCleanup = null;
+    els.speedPopover.classList.add('hidden');
+    els.speed.setAttribute('aria-expanded', 'false');
+  }
+
+  function closeAllPopovers() {
+    closeSpeedPopover();
+  }
+
+  function setReverse(rate) {
+    // 0 = off, 1 = -1x, 2 = -2x
+    if (rate === 0) {
+      stopReverse();
+    } else if (rate === 1 || rate === 2) {
+      startReverse(rate);
+    }
+    updateRevSegments();
+    paint();
+  }
+
+  function updateRevSegments() {
+    els.revSegments.forEach(btn => {
+      const r = parseInt(btn.dataset.rev, 10);
+      const active = (reverseRate === r);
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active);
+    });
   }
 
   function cycleReverse() {
@@ -668,6 +1267,7 @@
     if (reverseRate === 0) startReverse(1);
     else if (reverseRate === 1) startReverse(2);
     else stopReverse();
+    updateRevSegments();
     paint();
   }
 
@@ -690,11 +1290,31 @@
     const hasMeta = isFinite(dur);
     els.play.innerHTML = video && !video.paused && reverseRate === 0 ? SVG.pause : SVG.play;
     els.play.title = video && !video.paused && reverseRate === 0 ? 'Pause' : 'Play';
+    els.play.setAttribute('aria-label', video && !video.paused && reverseRate === 0 ? 'Pause' : 'Play');
     els.time.textContent = video
       ? fmt(video.currentTime) + ' / ' + fmt(dur)
       : '--:-- / --:--';
-    els.fill.style.width = hasMeta ? (video.currentTime / dur * 100) + '%' : '0%';
+    const progress = hasMeta ? (video.currentTime / dur * 100) : 0;
+    els.fill.style.width = progress + '%';
+    if (els.thumb) {
+      els.thumb.style.left = progress + '%';
+    }
+    // Update buffer visualization
+    if (els.buffer && video && video.buffered && video.buffered.length > 0) {
+      try {
+        const bufEnd = video.buffered.end(video.buffered.length - 1);
+        if (isFinite(bufEnd) && bufEnd > 0) {
+          const bufPercent = (bufEnd / dur * 100);
+          els.buffer.style.width = Math.min(100, bufPercent) + '%';
+        }
+      } catch (err) {
+        // buffered not accessible
+      }
+    }
     els.track.classList.toggle('disabled', !hasMeta);
+    if (hasMeta) {
+      els.track.setAttribute('aria-valuenow', Math.round(progress));
+    }
     els.speed.textContent = settings.playbackRate + 'x';
     els.rev.classList.toggle('on', reverseRate !== 0);
     els.rev.innerHTML = SVG.rev + '<span>' + (reverseRate !== 0 ? '-' + reverseRate + 'x' : 'rev') + '</span>';
@@ -707,6 +1327,74 @@
     const show = controllerActive() && !!video;
     els.pill.classList.toggle('hidden', !show || settings.controllerMini);
     els.chip.classList.toggle('hidden', !show || !settings.controllerMini);
+    if (show) applyAnchorPosition();
+  }
+
+  function applyAnchorPosition() {
+    if (!els.pill || settings.controllerAnchor === 'free') return;
+    const anchor = ANCHORS[settings.controllerAnchor] || ANCHORS['bottom-center'];
+    Object.assign(els.pill.style, anchor);
+  }
+
+  // Snap free position to nearest anchor if within threshold
+  function snapToAnchor(pos) {
+    const rect = { left: parseFloat(pos.left), top: parseFloat(pos.top) };
+    if (isNaN(rect.left) || isNaN(rect.top)) return null;
+    let bestAnchor = null;
+    let bestDist = Infinity;
+    const threshold = 60; // px
+    for (const [name, anchor] of Object.entries(ANCHORS)) {
+      if (name === 'free') continue;
+      // Compute anchor position in viewport coordinates
+      const el = els.pill;
+      const testStyle = { ...el.style };
+      Object.assign(el.style, anchor);
+      const r = el.getBoundingClientRect();
+      Object.assign(el.style, testStyle); // restore
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dist = Math.hypot(rect.left - cx, rect.top - cy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestAnchor = { ...anchor, anchor: name };
+      }
+    }
+    if (bestDist < threshold && bestAnchor) return bestAnchor;
+    return null;
+  }
+
+  // Collision avoidance: detect IG UI elements and nudge pill if overlapping
+  function checkCollisions() {
+    if (!els.pill || settings.controllerAnchor === 'free') return;
+    const pillRect = els.pill.getBoundingClientRect();
+    // IG bottom bar, comments sheet, share dialog, etc.
+    const avoidSelectors = [
+      '[role="dialog"]',           // modals
+      '.x1lliihq',                 // bottom nav bar
+      '[data-testid="share-sheet"]',
+      '._aa4b',                    // comments bottom bar
+      '._aagw',                    // action bar
+      '[aria-label="Comments"]',
+      '[data-bloks-name="bk.components.Footer"]'
+    ];
+    for (const sel of avoidSelectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      // Check overlap with 16px margin
+      const overlap = !(pillRect.right + 16 < r.left ||
+                        pillRect.left - 16 > r.right ||
+                        pillRect.bottom + 16 < r.top ||
+                        pillRect.top - 16 > r.bottom);
+      if (overlap) {
+        // Nudge pill away: prefer moving up, then left/right
+        const dy = r.top - pillRect.bottom - 16;
+        const dx = (pillRect.left + pillRect.right) / 2 < window.innerWidth / 2 ? 24 : -24;
+        els.pill.style.transform = `translate(${dx}px, ${dy}px)`;
+        return true; // nudged
+      }
+    }
+    return false;
   }
 
   function build() {
@@ -719,16 +1407,36 @@
     const pill = document.createElement('div');
     pill.className = 'pill hidden';
     pill.innerHTML =
-      '<button data-act="back" title="Back 5s">' + SVG.back + '</button>' +
-      '<button data-act="play" title="Play/Pause">' + SVG.play + '</button>' +
-      '<span class="time">--:-- / --:--</span>' +
-      '<div class="track"><div class="rail"><div class="fill"></div></div></div>' +
-      '<button data-act="fwd" title="Forward 5s">' + SVG.fwd + '</button>' +
-      '<button data-act="dl" title="Download video">' + SVG.dl + '</button>' +
-      '<button data-act="speed" class="speed" title="Playback speed">1x</button>' +
-      '<button data-act="rev" title="Reverse play">rev</button>' +
-      '<button data-act="pip" title="Picture-in-picture">' + SVG.pip + '</button>' +
-      '<button data-act="mini" title="Minimize">–</button>';
+      '<button data-act="back" title="Back 5s" aria-label="Back 5 seconds">' + SVG.back + '</button>' +
+      '<button data-act="play" title="Play/Pause" aria-label="Play or Pause">' + SVG.play + '</button>' +
+      '<span class="time" aria-live="polite">--:-- / --:--</span>' +
+      '<div class="track" role="slider" aria-label="Video timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">' +
+        '<div class="rail">' +
+          '<div class="buffer"></div>' +
+          '<div class="fill"></div>' +
+          '<div class="thumb"></div>' +
+          '<div class="tooltip"></div>' +
+        '</div>' +
+      '</div>' +
+      '<button data-act="fwd" title="Forward 5s" aria-label="Forward 5 seconds">' + SVG.fwd + '</button>' +
+      '<button data-act="dl" title="Download video" aria-label="Download video">' + SVG.dl +
+        '<svg class="dl-ring" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><circle></circle></svg>' +
+      '</button>' +
+      '<div class="speed-wrap" style="position: relative;">' +
+        '<button data-act="speed" class="speed" title="Playback speed" aria-label="Playback speed" aria-haspopup="true" aria-expanded="false">1x</button>' +
+        '<div class="popover speed-popover hidden" role="menu" aria-label="Playback speed">' +
+          '<div class="popover-header">Playback Speed</div>' +
+          '<ul class="popover-list" role="listbox"></ul>' +
+        '</div>' +
+      '</div>' +
+      '<div class="segmented rev-segmented" role="group" aria-label="Reverse playback">' +
+        '<button class="segmented-btn" data-rev="0" aria-pressed="true">Off</button>' +
+        '<button class="segmented-btn" data-rev="1" aria-pressed="false">-1×</button>' +
+        '<button class="segmented-btn" data-rev="2" aria-pressed="false">-2×</button>' +
+      '</div>' +
+      '<button data-act="pip" title="Picture-in-picture" aria-label="Toggle picture-in-picture">' + SVG.pip + '</button>' +
+      '<button data-act="mini" title="Minimize" aria-label="Minimize controller">' + SVG.minimize + '</button>' +
+      '<button class="help-btn" data-act="help" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">' + SVG.help + '</button>';
     const chip = document.createElement('div');
     chip.className = 'chip hidden';
     chip.innerHTML = SVG.play + '<span></span>';
@@ -744,20 +1452,85 @@
       play: pill.querySelector('[data-act="play"]'),
       time: pill.querySelector('.time'),
       track: pill.querySelector('.track'),
+      rail: pill.querySelector('.rail'),
+      buffer: pill.querySelector('.buffer'),
       fill: pill.querySelector('.fill'),
+      thumb: pill.querySelector('.thumb'),
+      tooltip: pill.querySelector('.tooltip'),
       speed: pill.querySelector('[data-act="speed"]'),
-      rev: pill.querySelector('[data-act="rev"]'),
+      speedPopover: pill.querySelector('.speed-popover'),
+      speedList: pill.querySelector('.speed-popover .popover-list'),
+      revSegments: pill.querySelectorAll('.rev-segmented .segmented-btn'),
       pip: pill.querySelector('[data-act="pip"]'),
-      dl: pill.querySelector('[data-act="dl"]')
+      dl: pill.querySelector('[data-act="dl"]'),
+      help: pill.querySelector('[data-act="help"]')
+    };
+
+    // Shortcuts overlay (created once)
+    const shortcutsOverlay = document.createElement('div');
+    shortcutsOverlay.className = 'shortcuts-overlay hidden';
+    shortcutsOverlay.innerHTML =
+      '<div class="shortcuts-panel" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">' +
+        '<div class="shortcuts-header">' +
+          '<h2 class="shortcuts-title" id="shortcuts-title">ReelScroll Shortcuts</h2>' +
+          '<button class="shortcuts-close" aria-label="Close shortcuts">×</button>' +
+        '</div>' +
+        '<div class="shortcuts-grid">' +
+          '<kbd class="shortcut-key">Space</kbd><span class="shortcut-desc">Play / Pause</span>' +
+          '<kbd class="shortcut-key">← / →</kbd><span class="shortcut-desc">Seek ±5s</span>' +
+          '<kbd class="shortcut-key">Shift+← / →</kbd><span class="shortcut-desc">Seek ±10s</span>' +
+          '<kbd class="shortcut-key">Home / End</kbd><span class="shortcut-desc">Start / End</span>' +
+          '<kbd class="shortcut-key">↑ / ↓</kbd><span class="shortcut-desc">Speed up / down</span>' +
+          '<kbd class="shortcut-key">R</kbd><span class="shortcut-desc">Cycle reverse</span>' +
+          '<kbd class="shortcut-key">P</kbd><span class="shortcut-desc">Toggle PiP</span>' +
+          '<kbd class="shortcut-key">D</kbd><span class="shortcut-desc">Download</span>' +
+          '<kbd class="shortcut-key">M</kbd><span class="shortcut-desc">Minimize</span>' +
+          '<kbd class="shortcut-key">?</kbd><span class="shortcut-desc">Show this help</span>' +
+        '</div>' +
+      '</div>';
+    shadow.appendChild(style);
+    shadow.appendChild(pill);
+    shadow.appendChild(chip);
+    shadow.appendChild(shortcutsOverlay);
+    document.documentElement.appendChild(host);
+
+    els.shortcutsOverlay = shortcutsOverlay;
+    els.shortcutsClose = shortcutsOverlay.querySelector('.shortcuts-close');
+
+    els = {
+      pill,
+      chip,
+      chipText: chip.querySelector('span'),
+      play: pill.querySelector('[data-act="play"]'),
+      time: pill.querySelector('.time'),
+      track: pill.querySelector('.track'),
+      rail: pill.querySelector('.rail'),
+      buffer: pill.querySelector('.buffer'),
+      fill: pill.querySelector('.fill'),
+      thumb: pill.querySelector('.thumb'),
+      tooltip: pill.querySelector('.tooltip'),
+      speed: pill.querySelector('[data-act="speed"]'),
+      speedPopover: pill.querySelector('.speed-popover'),
+      speedList: pill.querySelector('.speed-popover .popover-list'),
+      revSegments: pill.querySelectorAll('.rev-segmented .segmented-btn'),
+      pip: pill.querySelector('[data-act="pip"]'),
+      dl: pill.querySelector('[data-act="dl"]'),
+      help: pill.querySelector('[data-act="help"]'),
+      shortcutsOverlay: shortcutsOverlay,
+      shortcutsClose: shortcutsOverlay.querySelector('.shortcuts-close')
     };
 
     pill.querySelector('[data-act="back"]').addEventListener('click', () => nudgeSecs(-5));
     pill.querySelector('[data-act="fwd"]').addEventListener('click', () => nudgeSecs(5));
     els.play.addEventListener('click', togglePlay);
-    els.speed.addEventListener('click', cycleSpeed);
-    els.rev.addEventListener('click', cycleReverse);
+    els.speed.addEventListener('click', toggleSpeedPopover);
+    els.revSegments.forEach(btn => {
+      btn.addEventListener('click', () => setReverse(parseInt(btn.dataset.rev, 10)));
+    });
     els.pip.addEventListener('click', togglePip);
     els.dl.addEventListener('click', downloadVideo);
+    els.help.addEventListener('click', toggleShortcutsOverlay);
+    els.shortcutsClose.addEventListener('click', closeShortcutsOverlay);
     pill.querySelector('[data-act="mini"]').addEventListener('click', () => {
       chrome.storage.sync.set({ controllerMini: true });
       settings.controllerMini = true;
@@ -769,21 +1542,63 @@
       applyVisibility();
     });
 
+    // Keyboard navigation for timeline
+    els.track.addEventListener('keydown', (e) => {
+      if (!video || !isFinite(video.duration)) return;
+      const step = e.shiftKey ? 10 : 5;
+      let handled = true;
+      switch (e.key) {
+        case 'ArrowLeft': nudgeSecs(-step); break;
+        case 'ArrowRight': nudgeSecs(step); break;
+        case 'Home': video.currentTime = 0; break;
+        case 'End': video.currentTime = video.duration - 0.1; break;
+        default: handled = false;
+      }
+      if (handled) {
+        e.preventDefault();
+        paint();
+      }
+    });
+
     // Scrub: click or drag along the rail.
     const fracFromEvent = (e) => {
-      const r = els.track.getBoundingClientRect();
-      return (e.clientX - r.left) / Math.max(1, r.width);
+      const r = els.rail.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
     };
-    els.track.addEventListener('pointerdown', (e) => {
+    const startScrub = (e) => {
+      if (!video || !isFinite(video.duration)) return;
       seeking = true;
-      els.track.setPointerCapture(e.pointerId);
+      els.track.classList.add('dragging');
+      els.rail.setPointerCapture(e.pointerId);
       seekTo(fracFromEvent(e));
-    });
-    els.track.addEventListener('pointermove', (e) => {
+    };
+    const moveScrub = (e) => {
       if (seeking) seekTo(fracFromEvent(e));
+    };
+    const endScrub = () => {
+      seeking = false;
+      els.track.classList.remove('dragging');
+    };
+    els.rail.addEventListener('pointerdown', startScrub);
+    els.rail.addEventListener('pointermove', moveScrub);
+    els.rail.addEventListener('pointerup', endScrub);
+    els.rail.addEventListener('pointercancel', endScrub);
+    els.rail.addEventListener('pointerleave', endScrub);
+
+    // Tooltip update on mouse move
+    els.rail.addEventListener('mousemove', (e) => {
+      if (!video || !isFinite(video.duration)) return;
+      const frac = fracFromEvent(e);
+      const t = frac * video.duration;
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60);
+      els.tooltip.textContent = m + ':' + String(s).padStart(2, '0');
+      // Position tooltip
+      const railRect = els.rail.getBoundingClientRect();
+      const x = e.clientX - railRect.left;
+      els.tooltip.style.left = x + 'px';
+      els.tooltip.style.transform = 'translateX(-50%)';
     });
-    els.track.addEventListener('pointerup', () => { seeking = false; });
-    els.track.addEventListener('pointercancel', () => { seeking = false; });
 
     // Drag the pill by its background (never by buttons or the rail).
     let drag = null;
@@ -793,6 +1608,11 @@
       drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
       pill.classList.add('dragging');
       pill.setPointerCapture(e.pointerId);
+      // Switch to free mode on drag
+      if (settings.controllerAnchor !== 'free') {
+        settings.controllerAnchor = 'free';
+        chrome.storage.sync.set({ controllerAnchor: 'free' });
+      }
     });
     pill.addEventListener('pointermove', (e) => {
       if (!drag) return;
@@ -805,18 +1625,79 @@
       if (!drag) return;
       drag = null;
       pill.classList.remove('dragging');
+      // Snap to nearest anchor if close enough
       const pos = { left: pill.style.left, top: pill.style.top };
-      chrome.storage.sync.set({ controllerPos: pos });
-      settings.controllerPos = pos;
+      const snapped = snapToAnchor(pos);
+      if (snapped) {
+        Object.assign(els.pill.style, snapped);
+        chrome.storage.sync.set({ controllerAnchor: snapped.anchor, controllerPos: null });
+        settings.controllerAnchor = snapped.anchor;
+        settings.controllerPos = null;
+      } else {
+        const pos = { left: pill.style.left, top: pill.style.top };
+        chrome.storage.sync.set({ controllerPos: pos, controllerAnchor: 'free' });
+        settings.controllerPos = pos;
+        settings.controllerAnchor = 'free';
+      }
     });
 
-    if (settings.controllerPos) {
+    // Initial position: use saved free position, or apply anchor
+    if (settings.controllerPos && settings.controllerAnchor === 'free') {
       pill.style.left = settings.controllerPos.left;
       pill.style.top = settings.controllerPos.top;
       pill.style.bottom = 'auto';
       pill.style.transform = 'none';
+    } else {
+      applyAnchorPosition();
     }
   }
+
+  function toggleShortcutsOverlay() {
+    const isOpen = !els.shortcutsOverlay.classList.contains('hidden');
+    if (isOpen) {
+      closeShortcutsOverlay();
+      return;
+    }
+    closeAllPopovers();
+    els.shortcutsOverlay.classList.remove('hidden');
+    els.help.setAttribute('aria-expanded', 'true');
+    els.shortcutsClose.focus();
+    // Close on outside click
+    const closeOnClick = (ev) => {
+      if (!els.shortcutsOverlay.contains(ev.target) && ev.target !== els.help) {
+        closeShortcutsOverlay();
+        document.removeEventListener('click', closeOnClick);
+      }
+    };
+    document.addEventListener('click', closeOnClick);
+    // Keyboard: Esc to close
+    const keyHandler = (ev) => {
+      if (ev.key === 'Escape') {
+        closeShortcutsOverlay();
+        document.removeEventListener('keydown', keyHandler);
+      }
+    };
+    document.addEventListener('keydown', keyHandler);
+    shortcutsOverlayCleanup = () => {
+      document.removeEventListener('click', closeOnClick);
+      document.removeEventListener('keydown', keyHandler);
+    };
+  }
+
+  function closeShortcutsOverlay() {
+    if (shortcutsOverlayCleanup) shortcutsOverlayCleanup();
+    shortcutsOverlayCleanup = null;
+    els.shortcutsOverlay.classList.add('hidden');
+    els.help.setAttribute('aria-expanded', 'false');
+    els.help.focus();
+  }
+
+  function closeAllPopovers() {
+    closeSpeedPopover();
+    closeShortcutsOverlay();
+  }
+
+  let shortcutsOverlayCleanup = null;
 
   function tick() {
     frame++;
@@ -847,6 +1728,8 @@
       }
       applyVisibility();
     }
+    // Periodic collision check (every ~2 seconds)
+    if (frame % 120 === 0) checkCollisions();
     // End watchdog: catches reels whose `ended` never fires (loop, MSE, races).
     // Fires once per reel; re-arms when the user scrubs back away from the end.
     checkNearEnd();
