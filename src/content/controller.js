@@ -259,6 +259,11 @@
       z-index: 10;
     }
 
+    .tooltip img {
+      width: 160px; height: 90px; object-fit: cover; border-radius: 4px;
+      margin-top: 4px; display: block;
+    }
+
     .track:hover .tooltip { opacity: 1; }
 
     /* Download progress ring */
@@ -1415,7 +1420,7 @@
           '<div class="buffer"></div>' +
           '<div class="fill"></div>' +
           '<div class="thumb"></div>' +
-          '<div class="tooltip"></div>' +
+          '<div class="tooltip"><img class="thumb-img" style="width:160px;height:90px;object-fit:cover;border-radius:4px;margin-top:4px;display:none;"></div>' +
         '</div>' +
       '</div>' +
       '<button data-act="fwd" title="Forward 5s" aria-label="Forward 5 seconds">' + SVG.fwd + '</button>' +
@@ -1565,6 +1570,82 @@
       const r = els.rail.getBoundingClientRect();
       return Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
     };
+
+    // Thumbnail cache: Map<videoSrc, Map<time, dataURL>>
+    const thumbnailCache = new Map();
+    let thumbnailRequestId = 0;
+    const MAX_THUMBNAILS_PER_REEL = 50;
+
+    // Capture video frame at given time, return dataURL
+    const captureThumbnail = (targetTime) => {
+      if (!video || !isFinite(video.duration)) return Promise.resolve(null);
+      const src = video.currentSrc || video.src;
+      if (!src) return Promise.resolve(null);
+
+      let reelCache = thumbnailCache.get(src);
+      if (!reelCache) {
+        reelCache = new Map();
+        thumbnailCache.set(src, reelCache);
+      }
+
+      // Check cache first
+      const cachedKey = Math.round(targetTime);
+      if (reelCache.has(cachedKey)) return Promise.resolve(reelCache.get(cachedKey));
+
+      // Limit cache size
+      if (reelCache.size >= MAX_THUMBNAILS_PER_REEL) {
+        const firstKey = reelCache.keys().next().value;
+        reelCache.delete(firstKey);
+      }
+
+      // Try requestVideoFrameCallback (Chrome 106+)
+      if ('requestVideoFrameCallback' in video) {
+        return new Promise((resolve) => {
+          const id = ++thumbnailRequestId;
+          video.requestVideoFrameCallback((now, metadata) => {
+            if (thumbnailRequestId !== id) return resolve(null); // Superseded
+            const canvas = document.createElement('canvas');
+            canvas.width = 160;
+            canvas.height = 90;
+            const ctx = canvas.getContext('2d');
+            try {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+              reelCache.set(cachedKey, dataURL);
+              resolve(dataURL);
+            } catch (err) {
+              resolve(null);
+            }
+          }, { frameTimestamp: targetTime * 1000 }); // microseconds
+        });
+      }
+
+      // Fallback: seek + drawImage
+      return new Promise((resolve) => {
+        if (video.readyState < 2) return resolve(null);
+        const canvas = document.createElement('canvas');
+        canvas.width = 160;
+        canvas.height = 90;
+        const ctx = canvas.getContext('2d');
+        const originalTime = video.currentTime;
+        const handler = () => {
+          video.removeEventListener('seeked', handler);
+          try {
+            ctx.drawImage(video, 0, 0, 160, 90);
+            const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+            reelCache.set(cachedKey, dataURL);
+            video.currentTime = originalTime;
+            resolve(dataURL);
+          } catch (err) {
+            video.currentTime = originalTime;
+            resolve(null);
+          }
+        };
+        video.addEventListener('seeked', handler, { once: true });
+        video.currentTime = targetTime;
+      });
+    };
+
     const startScrub = (e) => {
       if (!video || !isFinite(video.duration)) return;
       seeking = true;
@@ -1585,19 +1666,33 @@
     els.rail.addEventListener('pointercancel', endScrub);
     els.rail.addEventListener('pointerleave', endScrub);
 
-    // Tooltip update on mouse move
+    // Tooltip update on mouse move (with thumbnail preview)
     els.rail.addEventListener('mousemove', (e) => {
       if (!video || !isFinite(video.duration)) return;
       const frac = fracFromEvent(e);
       const t = frac * video.duration;
       const m = Math.floor(t / 60);
       const s = Math.floor(t % 60);
-      els.tooltip.textContent = m + ':' + String(s).padStart(2, '0');
+      const timeStr = m + ':' + String(s).padStart(2, '0');
+
+      // Update tooltip text
+      els.tooltip.textContent = timeStr;
       // Position tooltip
       const railRect = els.rail.getBoundingClientRect();
       const x = e.clientX - railRect.left;
       els.tooltip.style.left = x + 'px';
       els.tooltip.style.transform = 'translateX(-50%)';
+
+      // Load and show thumbnail (non-blocking)
+      captureThumbnail(t).then(thumb => {
+        if (thumb) {
+          const img = els.tooltip.querySelector('img.thumb-img');
+          if (img) {
+            img.src = thumb;
+            img.style.display = 'block';
+          }
+        }
+      });
     });
 
     // Drag the pill by its background (never by buttons or the rail).
